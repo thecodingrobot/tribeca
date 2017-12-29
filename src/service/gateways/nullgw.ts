@@ -1,14 +1,21 @@
 /// <reference path="../utils.ts" />
 /// <reference path="../../common/models.ts" />
+///<reference path="../interfaces.ts"/>
 
+import * as _ from "lodash";
+import * as Q from "q";
 import Models = require("../../common/models");
 import Utils = require("../utils");
 import Interfaces = require("../interfaces");
+import Config = require("../config");
 var uuid = require('node-uuid');
 
 export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
-    OrderUpdate = new Utils.Evt<Models.OrderStatusReport>();
+    OrderUpdate = new Utils.Evt<Models.OrderStatusUpdate>();
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
+    
+    supportsCancelAllOpenOrders = () : boolean => { return false; };
+    cancelAllOpenOrders = () : Q.Promise<number> => { return Q(0); };
 
     public cancelsByClientOrderId = true;
 
@@ -16,36 +23,46 @@ export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
         return uuid.v1();
     }
 
-    sendOrder(order: Models.BrokeredOrder): Models.OrderGatewayActionReport {
+    private raiseTimeEvent = (o: Models.OrderStatusReport) => {
+        this.OrderUpdate.trigger({
+            orderId: o.orderId,
+            computationalLatency: Utils.fastDiff(Utils.date(), o.time)
+        })
+    };
+
+    sendOrder(order: Models.OrderStatusReport) {
+        if (order.timeInForce == Models.TimeInForce.IOC)
+            throw new Error("Cannot send IOCs");
         setTimeout(() => this.trigger(order.orderId, Models.OrderStatus.Working, order), 10);
-        return new Models.OrderGatewayActionReport(Utils.date());
+        this.raiseTimeEvent(order);
     }
 
-    cancelOrder(cancel: Models.BrokeredCancel): Models.OrderGatewayActionReport {
-        setTimeout(() => this.trigger(cancel.clientOrderId, Models.OrderStatus.Complete), 10);
-        return new Models.OrderGatewayActionReport(Utils.date());
+    cancelOrder(cancel: Models.OrderStatusReport) {
+        setTimeout(() => this.trigger(cancel.orderId, Models.OrderStatus.Complete), 10);
+        this.raiseTimeEvent(cancel);
     }
 
-    replaceOrder(replace: Models.BrokeredReplace): Models.OrderGatewayActionReport {
-        this.cancelOrder(new Models.BrokeredCancel(replace.origOrderId, replace.orderId, replace.side, replace.exchangeId));
-        return this.sendOrder(replace);
+    replaceOrder(replace: Models.OrderStatusReport) {
+        this.cancelOrder(replace);
+        this.sendOrder(replace);
     }
 
-    private trigger(orderId: string, status: Models.OrderStatus, order: Models.BrokeredOrder = null) {
-        var rpt: Models.OrderStatusReport = {
+    private trigger(orderId: string, status: Models.OrderStatus, order?: Models.OrderStatusReport) {
+        var rpt: Models.OrderStatusUpdate = {
             orderId: orderId,
             orderStatus: status,
             time: Utils.date()
         };
         this.OrderUpdate.trigger(rpt);
 
-        if (status === Models.OrderStatus.Working) {
-            var rpt: Models.OrderStatusReport = {
+        if (status === Models.OrderStatus.Working && Math.random() < .1) {
+            var rpt: Models.OrderStatusUpdate = {
                 orderId: orderId,
                 orderStatus: status,
                 time: Utils.date(),
                 lastQuantity: order.quantity,
-                lastPrice: order.price
+                lastPrice: order.price,
+                liquidity: Math.random() < .5 ? Models.Liquidity.Make : Models.Liquidity.Take
             };
             setTimeout(() => this.OrderUpdate.trigger(rpt), 1000);
         }
@@ -59,9 +76,9 @@ export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
 export class NullPositionGateway implements Interfaces.IPositionGateway {
     PositionUpdate = new Utils.Evt<Models.CurrencyPosition>();
 
-    constructor() {
-        setInterval(() => this.PositionUpdate.trigger(new Models.CurrencyPosition(500, 50, Models.Currency.USD)), 2500);
-        setInterval(() => this.PositionUpdate.trigger(new Models.CurrencyPosition(2, .5, Models.Currency.BTC)), 5000);
+    constructor(pair: Models.CurrencyPair) {
+        setInterval(() => this.PositionUpdate.trigger(new Models.CurrencyPosition(500, 50, pair.base)), 2500);
+        setInterval(() => this.PositionUpdate.trigger(new Models.CurrencyPosition(500, 50, pair.quote)), 2500);
     }
 }
 
@@ -70,28 +87,31 @@ export class NullMarketDataGateway implements Interfaces.IMarketDataGateway {
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
     MarketTrade = new Utils.Evt<Models.GatewayMarketTrade>();
 
-    constructor() {
+    constructor(private _minTick: number) {
         setTimeout(() => this.ConnectChanged.trigger(Models.ConnectivityStatus.Connected), 500);
-        setInterval(() => this.MarketData.trigger(this.generateMarketData()), 5000);
+        setInterval(() => this.MarketData.trigger(this.generateMarketData()), 5000*Math.random());
         setInterval(() => this.MarketTrade.trigger(this.genMarketTrade()), 15000);
     }
 
-    private genMarketTrade = () => new Models.GatewayMarketTrade(Math.random(), Math.random(), Utils.date(), false, Models.Side.Bid);
+    private getPrice = (sign: number) => Utils.roundNearest(1000 + sign * 100 * Math.random(), this._minTick);
 
-    private genSingleLevel = () => new Models.MarketSide(200 + 100 * Math.random(), Math.random());
+    private genMarketTrade = () => {
+        const side = (Math.random() > .5 ? Models.Side.Bid : Models.Side.Ask);
+        const sign = Models.Side.Ask === side ? 1 : -1;
+        return new Models.GatewayMarketTrade(this.getPrice(sign), Math.random(), Utils.date(), false, side);
+    }
 
+    private genSingleLevel = (sign: number) => 
+        new Models.MarketSide(this.getPrice(sign), Math.random());
+
+    private readonly Depth: number = 25;
     private generateMarketData = () => {
-        var genSide = () => {
-            var s = [];
-            for (var x = 0; x < 5; x++) {
-                s.push(this.genSingleLevel());
-            }
-            return s;
+        const genSide = (sign: number) => {
+            const s = _.times(this.Depth, _ => this.genSingleLevel(sign));
+            return _.sortBy(s, i => sign*i.price);
         };
-        return new Models.Market(genSide(), genSide(), Utils.date());
+        return new Models.Market(genSide(-1), genSide(1), Utils.date());
     };
-
-
 }
 
 class NullGatewayDetails implements Interfaces.IExchangeDetailsGateway {
@@ -114,10 +134,21 @@ class NullGatewayDetails implements Interfaces.IExchangeDetailsGateway {
     exchange(): Models.Exchange {
         return Models.Exchange.Null;
     }
+
+    constructor(public minTickIncrement: number) {}
 }
 
-export class NullGateway extends Interfaces.CombinedGateway {
-    constructor() {
-        super(new NullMarketDataGateway(), new NullOrderGateway(), new NullPositionGateway(), new NullGatewayDetails());
+class NullGateway extends Interfaces.CombinedGateway {
+    constructor(config: Config.IConfigProvider, pair: Models.CurrencyPair) {
+        const minTick = config.GetNumber("NullGatewayTick");
+        super(
+            new NullMarketDataGateway(minTick), 
+            new NullOrderGateway(), 
+            new NullPositionGateway(pair), 
+            new NullGatewayDetails(minTick));
     }
+}
+
+export async function createNullGateway(config: Config.IConfigProvider, pair: Models.CurrencyPair) : Promise<Interfaces.CombinedGateway> {
+    return new NullGateway(config, pair);
 }

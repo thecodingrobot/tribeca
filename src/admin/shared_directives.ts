@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
 /// <amd-dependency path="ui.bootstrap"/>
@@ -7,13 +6,19 @@ import angular = require("angular");
 import Messaging = require("../common/messaging");
 import Models = require("../common/models");
 import io = require("socket.io-client");
+import * as moment from "moment";
+
+export interface ProductState {
+    advert: Models.ProductAdvertisement;
+    fixed: number
+}
 
 var mypopover = ($compile : ng.ICompileService, $templateCache : ng.ITemplateCacheService) => {
     var getTemplate = (contentType, template_url) => {
         var template = '';
         switch (contentType) {
             case 'user':
-                template = $templateCache.get(template_url);
+                template = <any>$templateCache.get(template_url);
                 break;
         }
         return template;
@@ -28,7 +33,7 @@ var mypopover = ($compile : ng.ICompileService, $templateCache : ng.ITemplateCac
                 html: true,
                 date: scope.date
             };
-            (<any>$(element)).popover(options).click((e) => {
+            (<any>jQuery(element)).popover(options).click((e) => {
                 e.preventDefault();
             });
         }
@@ -84,13 +89,23 @@ export class EvalAsyncSubscriber<T> implements Messaging.ISubscribe<T> {
     };
 
     public disconnect = () => this._wrapped.disconnect();
+    
+    public get connected() { return this._wrapped.connected; }
 }
 
-angular.module('sharedDirectives', ['ui.bootstrap'])
+export function fastDiff(a: moment.Moment, b: moment.Moment) {
+    return a.valueOf() - b.valueOf();
+}
+
+export var sharedDirectives = "sharedDirectives";
+
+angular.module(sharedDirectives, ['ui.bootstrap'])
        .directive('mypopover', mypopover)
        .directive('bindOnce', bindOnce)
-       .factory("socket", () => io)
+       .factory("socket", () : SocketIOClient.Socket => io())
+       .factory("product", function() { return {advert: new Models.ProductAdvertisement(null, null, "none", .01)} })
        .service("subscriberFactory", SubscriberFactory)
        .service("fireFactory", FireFactory)
+       .filter("veryShortDate", () => Models.veryShortDate)
        .filter("momentFullDate", () => Models.toUtcFormattedTime)
        .filter("momentShortDate", () => Models.toShortTimeString);

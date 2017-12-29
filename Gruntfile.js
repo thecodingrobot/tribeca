@@ -17,20 +17,19 @@ module.exports = function (grunt) {
 
             client: {
                 files: adminFiles,
-                tasks: ['ts:admin']
+                tasks: ['ts:admin', "copy", "browserify"]
             },
 
             static: {
                 files: html,
-                tasks: ['copy']
+                tasks: ['copy', "browserify"]
             }
         },
 
         ts: {
             options: {
-                sourceMap: false,
+                sourceMap: true,
                 comments: false,               // same as !removeComments. [true | false (default)]
-                target: 'es5',                 // target javascript language. [es3 (default) | es5]
                 declaration: false,            // generate a declaration .d.ts file for every output js file. [true | false (default)]
                 fast: 'always'
             },
@@ -39,6 +38,7 @@ module.exports = function (grunt) {
                 src: serviceFiles,
                 outDir: 'tribeca',
                 options: {
+                    target: 'es6',
                     module: 'commonjs'
                 }
             },
@@ -47,7 +47,8 @@ module.exports = function (grunt) {
                 src: adminFiles,
                 outDir: 'tribeca/service/admin/js',
                 options: {
-                    module: 'amd'
+                    target: 'es6',
+                    module: 'commonjs'
                 }
             }
         },
@@ -59,13 +60,23 @@ module.exports = function (grunt) {
                 src: "**",
                 dest: "tribeca/service/admin"
             }
+        },
+        
+        browserify: {
+            dist: {
+                files: {
+                    "tribeca/service/admin/js/admin/bundle.min.js": ["tribeca/service/admin/js/admin/client.js"]
+                },
+            }
         }
     });
 
     grunt.loadNpmTasks("grunt-ts");
     grunt.loadNpmTasks('grunt-contrib-watch');
     grunt.loadNpmTasks('grunt-contrib-copy');
+    grunt.loadNpmTasks('grunt-browserify');
 
-    grunt.registerTask("default", ["ts", "copy", "watch"]);
-    grunt.registerTask("compile", ["ts", "copy"])
+    var compile = ["ts", "copy", "browserify"];
+    grunt.registerTask("compile", compile);
+    grunt.registerTask("default", compile.concat(["watch"]));
 };

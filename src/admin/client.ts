@@ -1,16 +1,35 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
-/// <amd-dependency path="ui.bootstrap"/>
+/// <reference path="orderlist.ts"/>
+/// <reference path="trades.ts"/>
+/// <reference path="../common/messaging.ts"/>
+/// <reference path="shared_directives.ts"/>
+/// <reference path="pair.ts"/>
+/// <reference path="market-quoting.ts"/>
+/// <reference path="market-trades.ts"/>
+/// <reference path="position.ts"/>
+/// <reference path="target-base-position.ts"/>
+/// <reference path="trade-safety.ts"/>
 
+(<any>global).jQuery = require("jquery");
 import angular = require("angular");
+
+var ui_bootstrap = require("angular-ui-bootstrap");
+var ngGrid = require("../ui-grid.min");
+var bootstrap = require("../bootstrap.min");
+
 import Models = require("../common/models");
 import moment = require("moment");
-import Exchange = require("./exchange");
 import OrderList = require("./orderlist");
 import Trades = require("./trades");
 import Messaging = require("../common/messaging");
 import Shared = require("./shared_directives");
 import Pair = require("./pair");
+import MarketQuoting = require("./market-quoting");
+import MarketTrades = require("./market-trades");
+import Messages = require("./messages");
+import Position = require("./position");
+import Tbp = require("./target-base-position");
+import TradeSafety = require("./trade-safety");
 
 interface MainWindowScope extends ng.IScope {
     env : string;
@@ -19,6 +38,7 @@ interface MainWindowScope extends ng.IScope {
     pair : Pair.DisplayPair;
     exch_name : string;
     pair_name : string;
+    cancelAllOrders();
 }
 
 class DisplayOrder {
@@ -32,7 +52,7 @@ class DisplayOrder {
     availableTifs : string[];
     availableOrderTypes : string[];
 
-    private static getNames<T>(enumObject : T) {
+    private static getNames(enumObject : any) {
         var names : string[] = [];
         for (var mem in enumObject) {
             if (!enumObject.hasOwnProperty(mem)) continue;
@@ -63,7 +83,12 @@ var uiCtrl = ($scope : MainWindowScope,
               $timeout : ng.ITimeoutService,
               $log : ng.ILogService,
               subscriberFactory : Shared.SubscriberFactory,
-              fireFactory : Shared.FireFactory) => {
+              fireFactory : Shared.FireFactory,
+              product: Shared.ProductState) => {
+    
+    var cancelAllFirer = fireFactory.getFire(Messaging.Topics.CancelAllOrders);
+    $scope.cancelAllOrders = () => cancelAllFirer.fire(new Models.CancelAllOrdersRequest());
+                  
     $scope.order = new DisplayOrder(fireFactory, $log);
     $scope.pair = null;
 
@@ -74,23 +99,29 @@ var uiCtrl = ($scope : MainWindowScope,
         $scope.pair_name = Models.Currency[pa.pair.base] + "/" + Models.Currency[pa.pair.quote];
         $scope.exch_name = Models.Exchange[pa.exchange];
         $scope.pair = new Pair.DisplayPair($scope, subscriberFactory, fireFactory);
+        product.advert = pa;
+        product.fixed = -1*Math.floor(Math.log10(pa.minTick)); 
     };
 
-    var reset = (reason : string) => {
+    var reset = (reason : string, connected: boolean) => {
         $log.info("reset", reason);
-        $scope.connected = false;
-        $scope.pair_name = null;
-        $scope.exch_name = null;
+        $scope.connected = connected;
 
-        if ($scope.pair !== null)
-            $scope.pair.dispose();
-        $scope.pair = null;
+        if (connected) {
+            $scope.pair_name = null;
+            $scope.exch_name = null;
+
+            if ($scope.pair !== null)
+                $scope.pair.dispose();
+            $scope.pair = null;
+        }
     };
-    reset("startup");
+    reset("startup", false);
 
     var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.ProductAdvertisement)
         .registerSubscriber(onAdvert, a => a.forEach(onAdvert))
-        .registerDisconnectedHandler(() => reset("disconnect"));
+        .registerConnectHandler(() => reset("connect", true))
+        .registerDisconnectedHandler(() => reset("disconnect", false));
 
     $scope.$on('$destroy', () => {
         sub.disconnect();
@@ -101,16 +132,16 @@ var uiCtrl = ($scope : MainWindowScope,
 };
 
 var requires = ['ui.bootstrap',
-                'ngGrid',
-                'orderListDirective',
-                'tradeListDirective',
-                'marketQuotingDirective',
-                'marketTradeDirective',
-                'messagesDirective', 
-                'positionDirective',
-                'targetBasePositionDirective',
-                'tradeSafetyDirective',
-                'sharedDirectives'];
+                'ui.grid',
+                OrderList.orderListDirective,
+                Trades.tradeListDirective,
+                MarketQuoting.marketQuotingDirective,
+                MarketTrades.marketTradeDirective,
+                Messages.messagesDirective, 
+                Position.positionDirective,
+                Tbp.targetBasePositionDirective,
+                TradeSafety.tradeSafetyDirective,
+                Shared.sharedDirectives];
 
 angular.module('projectApp', requires)
        .controller('uiCtrl', uiCtrl);

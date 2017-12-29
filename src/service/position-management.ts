@@ -2,6 +2,11 @@
 /// <reference path="../common/messaging.ts" />
 /// <reference path="config.ts" />
 /// <reference path="utils.ts" />
+/// <reference path="statistics.ts"/>
+/// <reference path="persister.ts"/>
+/// <reference path="fair-value.ts"/>
+/// <reference path="interfaces.ts"/>
+/// <reference path="quoting-parameters.ts"/>
 
 import Models = require("../common/models");
 import Messaging = require("../common/messaging");
@@ -10,21 +15,15 @@ import Statistics = require("./statistics");
 import util = require("util");
 import _ = require("lodash");
 import Persister = require("./persister");
-import Agent = require("./arbagent");
 import mongodb = require('mongodb');
 import FairValue = require("./fair-value");
 import moment = require("moment");
 import Interfaces = require("./interfaces");
 import QuotingParameters = require("./quoting-parameters");
-
-export class RegularFairValuePersister extends Persister.Persister<Models.RegularFairValue> {
-    constructor(db: Q.Promise<mongodb.Db>) {
-        super(db, "rfv", Persister.timeLoader, Persister.timeSaver);
-    }
-}
+import log from "./logging";
 
 export class PositionManager {
-    private _log: Utils.Logger = Utils.log("tribeca:rfv");
+    private _log = log("rfv");
 
     public NewTargetPosition = new Utils.Evt();
 
@@ -35,38 +34,40 @@ export class PositionManager {
 
     private _timer: RegularTimer;
     constructor(
+        private _details: Interfaces.IBroker,
         private _timeProvider: Utils.ITimeProvider,
         private _persister: Persister.IPersist<Models.RegularFairValue>,
         private _fvAgent: FairValue.FairValueEngine,
         private _data: Models.RegularFairValue[],
         private _shortEwma: Statistics.IComputeStatistics,
         private _longEwma: Statistics.IComputeStatistics) {
-        var lastTime = (this._data !== null && _.any(_data)) ? _.last(this._data).time : null;
-        this._timer = new RegularTimer(_timeProvider, this.updateEwmaValues, moment.duration(1, 'hours'), lastTime);
+        const lastTime = (this._data !== null && _.some(_data)) ? _.last(this._data).time : null;
+        this._timer = new RegularTimer(_timeProvider, this.updateEwmaValues, moment.duration(1, 'hours'), moment(lastTime));
     }
 
     private updateEwmaValues = () => {
-        var fv = this._fvAgent.latestFairValue;
+        const fv = this._fvAgent.latestFairValue;
         if (fv === null)
             return;
 
-        var rfv = new Models.RegularFairValue(this._timeProvider.utcNow(), fv.price);
+        const rfv = new Models.RegularFairValue(this._timeProvider.utcNow(), fv.price);
 
-        var newShort = this._shortEwma.addNewValue(fv.price);
-        var newLong = this._longEwma.addNewValue(fv.price);
+        const newShort = this._shortEwma.addNewValue(fv.price);
+        const newLong = this._longEwma.addNewValue(fv.price);
 
-        var newTargetPosition = (newShort - newLong) / 2.0;
+        const minTick = this._details.minTickIncrement;    
+        const factor = 1/minTick;
+        let newTargetPosition = ((newShort * factor/ newLong) - factor) * 5;
 
         if (newTargetPosition > 1) newTargetPosition = 1;
         if (newTargetPosition < -1) newTargetPosition = -1;
 
-        if (Math.abs(newTargetPosition - this._latest) > 1e-2) {
+        if (Math.abs(newTargetPosition - this._latest) > minTick) {
             this._latest = newTargetPosition;
             this.NewTargetPosition.trigger();
         }
 
-        this._log("recalculated regular fair value, short:", Utils.roundFloat(newShort), "long:", Utils.roundFloat(newLong),
-            "target:", Utils.roundFloat(this._latest), "currentFv:", Utils.roundFloat(fv.price));
+        this._log.info(`recalculated regular fair value, short: ${newShort} long: ${newLong}, target: ${this._latest}, currentFv: ${fv.price}`);
 
         this._data.push(rfv);
         this._persister.persist(rfv);
@@ -74,7 +75,7 @@ export class PositionManager {
 }
 
 export class TargetBasePositionManager {
-    private _log: Utils.Logger = Utils.log("tribeca:positionmanager");
+    private _log = log("positionmanager");
 
     public NewTargetPosition = new Utils.Evt();
 
@@ -97,13 +98,13 @@ export class TargetBasePositionManager {
     }
 
     private recomputeTargetPosition = () => {
-        var latestPosition = this._positionBroker.latestReport;
-        var params = this._params.latest;
+        const latestPosition = this._positionBroker.latestReport;
+        const params = this._params.latest;
 
         if (params === null || latestPosition === null)
             return;
 
-        var targetBasePosition: number = params.targetBasePosition;
+        let targetBasePosition: number = params.targetBasePosition;
         if (params.autoPositionMode === Models.AutoPositionMode.EwmaBasic) {
             targetBasePosition = ((1 + this._positionManager.latestTargetPosition) / 2.0) * latestPosition.value;
         }
@@ -115,7 +116,7 @@ export class TargetBasePositionManager {
             this._wrapped.publish(this.latestTargetPosition);
             this._persister.persist(this.latestTargetPosition);
 
-            this._log("recalculated target base position:", Utils.roundFloat(this.latestTargetPosition.data));
+            this._log.info("recalculated target base position:", this.latestTargetPosition.data);
         }
     };
 }
@@ -126,12 +127,12 @@ export class RegularTimer {
         private _timeProvider : Utils.ITimeProvider,
         private _action: () => void,
         private _diffTime: moment.Duration,
-        lastTime: moment.Moment = null) {
-        if (lastTime === null) {
+        lastTime: moment.Moment) {
+        if (!moment.isMoment(lastTime)) {
             this.startTicking();
         }
         else {
-            var timeout = lastTime.add(_diffTime).diff(_timeProvider.utcNow());
+            const timeout = lastTime.add(_diffTime).diff(_timeProvider.utcNow());
 
             if (timeout > 0) {
                 _timeProvider.setTimeout(this.startTicking, moment.duration(timeout));

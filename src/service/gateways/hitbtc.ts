@@ -1,11 +1,11 @@
-/// <reference path="../../../typings/tsd.d.ts" />
 /// <reference path="../utils.ts" />
 /// <reference path="../../common/models.ts" />
 /// <reference path="nullgw.ts" />
+/// <reference path="../interfaces.ts"/>
 
 import Config = require("../config");
 import crypto = require('crypto');
-import WebSocket = require('ws');
+import WebSocket from "../websocket";
 import request = require('request');
 import url = require("url");
 import querystring = require("querystring");
@@ -16,10 +16,12 @@ import Interfaces = require("../interfaces");
 import io = require("socket.io-client");
 import moment = require("moment");
 import util = require("util");
-var shortId = require("shortid");
-var SortedArray = require("collections/sorted-array");
+import * as Q from "q";
+import log from "../logging";
+const shortId = require("shortid");
+const SortedMap = require("collections/sorted-map");
 
-var _lotMultiplier = 100.0;
+const _lotMultiplier = 100.0;
 
 interface NoncePayload<T> {
     nonce: number;
@@ -56,12 +58,12 @@ interface OrderCancel extends HitBtcPayload {
 }
 
 interface HitBtcOrderBook {
-    asks : Array<Array<string>>;
-    bids : Array<Array<string>>;
+    asks : [string, string][];
+    bids : [string, string][];
 }
 
 interface Update {
-    price : number;
+    price : string;
     size : number;
     timestamp : number;
 }
@@ -87,8 +89,8 @@ interface MarketDataIncrementalRefresh {
 interface ExecutionReport {
     orderId : string;
     clientOrderId : string;
-    execReportType : string;
-    orderStatus : string;
+    execReportType : "new"|"canceled"|"rejected"|"expired"|"trade"|"status";
+    orderStatus : "new"|"partiallyFilled"|"filled"|"canceled"|"rejected"|"expired";
     orderRejectReason? : string;
     symbol : string;
     side : string;
@@ -118,138 +120,169 @@ interface MarketTrade {
     amount : number;
 }
 
+class SideMarketData {
+    private readonly _data : Map<string, Models.MarketSide>;
+    private readonly _collator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'})
+
+    constructor(side: Models.Side) {
+        const compare = side === Models.Side.Bid ? 
+            ((a,b) => this._collator.compare(b,a)) : 
+            ((a,b) => this._collator.compare(a,b));
+        this._data = new SortedMap([], null, compare);
+    }
+
+    public update = (k: string, v: Models.MarketSide) : void => {
+        if (v.size === 0) {
+            this._data.delete(k);
+            return;
+        }
+
+        const existing = this._data.get(k);
+        if (existing) {
+            existing.size = v.size;
+        }
+        else {
+            this._data.set(k, v);
+        }
+    }
+
+    public clear = () : void => this._data.clear();
+
+    public getBest = (n: number) : Models.MarketSide[] => {
+        const b = new Array<Models.MarketSide>();
+        const it = (<any>(this._data)).iterator();
+
+        while (b.length < n) {
+            let x : {done: boolean, value: {key: string, value: Models.MarketSide}} = it.next();
+            if (x.done) return b;
+            b.push(x.value.value);
+        }
+
+        return b;
+    };
+
+    public any = () : boolean => (<any>(this._data)).any();
+    public min = () : Models.MarketSide => (<any>(this._data)).min();
+    public max = () : Models.MarketSide => (<any>(this._data)).max();
+}
+
 class HitBtcMarketDataGateway implements Interfaces.IMarketDataGateway {
     MarketData = new Utils.Evt<Models.Market>();
-    MarketTrade = new Utils.Evt<Models.MarketSide>();
-    _marketDataWs : WebSocket;
+    MarketTrade = new Utils.Evt<Models.GatewayMarketTrade>();
+    private readonly _marketDataWs : WebSocket;
 
     private _hasProcessedSnapshot = false;
 
-    private static Eq(a : Models.MarketSide, b : Models.MarketSide) { return Math.abs(a.price - b.price) < 1e-4; }
-
-    private static AskCmp = (a : Models.MarketSide, b : Models.MarketSide) => {
-        if (HitBtcMarketDataGateway.Eq(a, b)) return 0;
-        return a.price > b.price ? 1 : -1;
-    };
-
-    private static BidCmp = (a : Models.MarketSide, b : Models.MarketSide) => {
-        if (HitBtcMarketDataGateway.Eq(a, b)) return 0;
-        return a.price > b.price ? -1 : 1;
-    };
-
-    private _lastBids = new SortedArray([], HitBtcMarketDataGateway.Eq, HitBtcMarketDataGateway.BidCmp);
-    private _lastAsks = new SortedArray([], HitBtcMarketDataGateway.Eq, HitBtcMarketDataGateway.AskCmp);
-    private onMarketDataIncrementalRefresh = (msg : MarketDataIncrementalRefresh, t : moment.Moment) => {
-        if (msg.symbol != "BTCUSD" || !this._hasProcessedSnapshot) return;
+    private readonly _lastBids = new SideMarketData(Models.Side.Bid);
+    private readonly _lastAsks = new SideMarketData(Models.Side.Ask);
+    private onMarketDataIncrementalRefresh = (msg : MarketDataIncrementalRefresh, t : Date) => {
+        if (msg.symbol !== this._symbolProvider.symbol || !this._hasProcessedSnapshot) return;
         this.onMarketDataUpdate(msg.bid, msg.ask, t);
     };
 
-    private onMarketDataSnapshotFullRefresh = (msg : MarketDataSnapshotFullRefresh, t : moment.Moment) => {
-        if (msg.symbol != "BTCUSD") return;
+    private onMarketDataSnapshotFullRefresh = (msg : MarketDataSnapshotFullRefresh, t : Date) => {
+        if (msg.symbol !== this._symbolProvider.symbol) return;
         this._lastAsks.clear();
         this._lastBids.clear();
         this.onMarketDataUpdate(msg.bid, msg.ask, t);
         this._hasProcessedSnapshot = true;
     };
 
-    private onMarketDataUpdate = (bids : Update[], asks : Update[], t : moment.Moment) => {
-        var ordBids = HitBtcMarketDataGateway.applyIncrementals(bids, this._lastBids);
-        var ordAsks = HitBtcMarketDataGateway.applyIncrementals(asks, this._lastAsks);
+    private onMarketDataUpdate = (bids : Update[], asks : Update[], t : Date) => {
+        const ordBids = this.applyUpdates(bids, this._lastBids);
+        const ordAsks = this.applyUpdates(asks, this._lastAsks);
 
         this.MarketData.trigger(new Models.Market(ordBids, ordAsks, t));
     };
 
-    private static applyIncrementals(incomingUpdates : Update[], side : any) {
-        for (var i = 0; i < incomingUpdates.length; i++) {
-            var u : Update = incomingUpdates[i];
-            var ms = new Models.MarketSide(parseFloat(<any>u.price), u.size / _lotMultiplier);
-            if (u.size == 0) {
-                side.delete(ms);
-            }
-            else {
-                var existing = side.get(ms);
-                if (existing !== undefined) {
-                    existing.size = ms.size;
-                }
-                else {
-                    side.push(ms);
-                }
-            }
+    private applyUpdates(incomingUpdates : Update[], side : SideMarketData) {
+        for (let u of incomingUpdates) {
+            const ms = new Models.MarketSide(parseFloat(u.price), u.size / _lotMultiplier);            
+            side.update(u.price, ms);
         }
 
-        return side.slice(0, 5);
+        return side.getBest(25);
     }
 
-    private onMessage = (raw : string) => {
-        var t : moment.Moment = Utils.date();
-
+    private onMessage = (raw : Models.Timestamped<string>) => {
+        let msg: any;
         try {
-            var msg = JSON.parse(raw);
+            msg = JSON.parse(raw.data);
         }
         catch (e) {
-            this._log("Error parsing msg %o", raw);
+            this._log.error(e, "Error parsing msg", raw);
             throw e;
         }
 
+        if (this._log.debug())
+            this._log.debug(msg, "message");
+
         if (msg.hasOwnProperty("MarketDataIncrementalRefresh")) {
-            this.onMarketDataIncrementalRefresh(msg.MarketDataIncrementalRefresh, t);
+            this.onMarketDataIncrementalRefresh(msg.MarketDataIncrementalRefresh, raw.time);
         }
         else if (msg.hasOwnProperty("MarketDataSnapshotFullRefresh")) {
-            this.onMarketDataSnapshotFullRefresh(msg.MarketDataSnapshotFullRefresh, t);
+            this.onMarketDataSnapshotFullRefresh(msg.MarketDataSnapshotFullRefresh, raw.time);
         }
         else {
-            this._log("unhandled message", msg);
+            this._log.info("unhandled message", msg);
         }
     };
 
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
     private onConnectionStatusChange = () => {
-        if (this._marketDataWs.readyState === WebSocket.OPEN && (<any>this._tradesClient).connected) {
+        if (this._marketDataWs.isConnected && this._tradesClient.connected) {
             this.ConnectChanged.trigger(Models.ConnectivityStatus.Connected);
         }
         else {
             this.ConnectChanged.trigger(Models.ConnectivityStatus.Disconnected);
         }
     };
+    
+    private onTrade = (t: MarketTrade) => {
+        let side : Models.Side = Models.Side.Unknown;
+        if (this._lastAsks.any() && this._lastBids.any()) {
+            const distance_from_bid = Math.abs(this._lastBids.max().price - t.price);
+            const distance_from_ask = Math.abs(this._lastAsks.min().price - t.price);
+            if (distance_from_bid < distance_from_ask) side = Models.Side.Bid;
+            if (distance_from_bid > distance_from_ask) side = Models.Side.Ask;
+        }
+        
+        this.MarketTrade.trigger(new Models.GatewayMarketTrade(t.price, t.amount, new Date(), false, side));
+    };
 
-    _tradesClient : SocketIOClient.Socket;
-     _log : Utils.Logger = Utils.log("tribeca:gateway:HitBtcMD");
-    constructor(config : Config.IConfigProvider) {
-        this._marketDataWs = new WebSocket(config.GetString("HitBtcMarketDataUrl"));
-        this._marketDataWs.on('open', this.onConnectionStatusChange);
-        this._marketDataWs.on('message', this.onMessage);
-        this._marketDataWs.on("close", (code, msg) => {
-            this.onConnectionStatusChange();
-            this._log("close code=%d msg=%s", code, msg);
-        });
-        this._marketDataWs.on("error", err => {
-            this.onConnectionStatusChange();
-            this._log("error %s", err);
-            throw err;
-        });
+    private readonly _tradesClient : SocketIOClient.Socket;
+    private readonly _log = log("tribeca:gateway:HitBtcMD");
+    constructor(
+            config : Config.IConfigProvider, 
+            private readonly _symbolProvider: HitBtcSymbolProvider, 
+            private readonly _minTick: number) {
 
-        this._log("socket.io: %s", config.GetString("HitBtcSocketIoUrl") + "/trades/BTCUSD");
-        this._tradesClient = io.connect(config.GetString("HitBtcSocketIoUrl") + "/trades/BTCUSD");
+        this._marketDataWs = new WebSocket(
+            config.GetString("HitBtcMarketDataUrl"), 5000, 
+            this.onMessage, 
+            this.onConnectionStatusChange, 
+            this.onConnectionStatusChange);
+        this._marketDataWs.connect();
+
+        this._tradesClient = io.connect(config.GetString("HitBtcSocketIoUrl") + "/trades/" + this._symbolProvider.symbol);
         this._tradesClient.on("connect", this.onConnectionStatusChange);
-        this._tradesClient.on("trade", (t : MarketTrade) => {
-            this.MarketTrade.trigger(new Models.GatewayMarketTrade(t.price, t.amount, Utils.date(), false, null));
-        });
+        this._tradesClient.on("trade", this.onTrade);
         this._tradesClient.on("disconnect", this.onConnectionStatusChange);
 
         request.get(
-            {url: url.resolve(config.GetString("HitBtcPullUrl"), "/api/1/public/BTCUSD/orderbook")},
+            {url: url.resolve(config.GetString("HitBtcPullUrl"), "/api/1/public/" + this._symbolProvider.symbol + "/orderbook")},
             (err, body, resp) => {
                 this.onMarketDataSnapshotFullRefresh(resp, Utils.date());
             });
 
         request.get(
-            {url: url.resolve(config.GetString("HitBtcPullUrl"), "/api/1/public/BTCUSD/trades"),
+            {url: url.resolve(config.GetString("HitBtcPullUrl"), "/api/1/public/" + this._symbolProvider.symbol + "/trades"),
              qs: {from: 0, by: "trade_id", sort: 'desc', start_index: 0, max_results: 100}},
             (err, body, resp) => {
                 JSON.parse((<any>body).body).trades.forEach(t => {
-                    var price = parseFloat(t[1]);
-                    var size = parseFloat(t[2]);
-                    var time = moment(t[3]);
+                    const price = parseFloat(t[1]);
+                    const size = parseFloat(t[2]);
+                    const time = new Date(t[3]);
 
                     this.MarketTrade.trigger(new Models.GatewayMarketTrade(price, size, time, true, null));
                 });
@@ -258,39 +291,50 @@ class HitBtcMarketDataGateway implements Interfaces.IMarketDataGateway {
 }
 
 class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
-    OrderUpdate = new Utils.Evt<Models.OrderStatusReport>();
-    _orderEntryWs : WebSocket;
+    OrderUpdate = new Utils.Evt<Models.OrderStatusUpdate>();
+    private readonly _orderEntryWs : WebSocket;
 
     public cancelsByClientOrderId = true;
+    
+    supportsCancelAllOpenOrders = () : boolean => { return false; };
+    cancelAllOpenOrders = () : Q.Promise<number> => { return Q(0); };
 
     _nonce = 1;
 
-    cancelOrder = (cancel : Models.BrokeredCancel) : Models.OrderGatewayActionReport => {
-        this.sendAuth("OrderCancel", {clientOrderId: cancel.clientOrderId,
-            cancelRequestClientOrderId: cancel.requestId,
-            symbol: "BTCUSD",
-            side: HitBtcOrderEntryGateway.getSide(cancel.side)});
-        return new Models.OrderGatewayActionReport(Utils.date());
+    cancelOrder = (cancel : Models.OrderStatusReport) => {
+        this.sendAuth<OrderCancel>("OrderCancel", {clientOrderId: cancel.orderId,
+            cancelRequestClientOrderId: cancel.orderId + "C",
+            symbol: this._symbolProvider.symbol,
+            side: HitBtcOrderEntryGateway.getSide(cancel.side)}, () => {
+                this.OrderUpdate.trigger({
+                    orderId: cancel.orderId,
+                    computationalLatency: Utils.fastDiff(Utils.date(), cancel.time)
+                });
+            });
     };
 
-    replaceOrder = (replace : Models.BrokeredReplace) : Models.OrderGatewayActionReport => {
-        this.cancelOrder(new Models.BrokeredCancel(replace.origOrderId, replace.orderId, replace.side, replace.exchangeId));
+    replaceOrder = (replace : Models.OrderStatusReport) => {
+        this.cancelOrder(replace);
         return this.sendOrder(replace);
     };
 
-    sendOrder = (order : Models.BrokeredOrder) : Models.OrderGatewayActionReport => {
-        var hitBtcOrder : NewOrder = {
+    sendOrder = (order : Models.OrderStatusReport) => {
+        const hitBtcOrder : NewOrder = {
             clientOrderId: order.orderId,
-            symbol: "BTCUSD",
+            symbol: this._symbolProvider.symbol,
             side: HitBtcOrderEntryGateway.getSide(order.side),
             quantity: order.quantity * _lotMultiplier,
             type: HitBtcOrderEntryGateway.getType(order.type),
-            price: Utils.roundFloat(order.price),
+            price: order.price,
             timeInForce: HitBtcOrderEntryGateway.getTif(order.timeInForce)
         };
 
-        this.sendAuth("NewOrder", hitBtcOrder);
-        return new Models.OrderGatewayActionReport(Utils.date());
+        this.sendAuth<NewOrder>("NewOrder", hitBtcOrder, () => {
+            this.OrderUpdate.trigger({
+                orderId: order.orderId,
+                computationalLatency: Utils.fastDiff(Utils.date(), order.time)
+            });
+        });
     };
 
     private static getStatus(m : ExecutionReport) : Models.OrderStatus {
@@ -321,8 +365,6 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                 return "GTC";
             case Models.TimeInForce.IOC:
                 return "IOC";
-            default:
-                throw new Error("TIF " + Models.TimeInForce[tif] + " not supported in HitBtc");
         }
     }
 
@@ -343,35 +385,49 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
                 return "limit";
             case Models.OrderType.Market:
                 return "market";
-            default:
-                throw new Error("OrderType " + Models.OrderType[t] + " not supported in HitBtc");
         }
     }
 
     private onExecutionReport = (tsMsg : Models.Timestamped<ExecutionReport>) => {
-        var t = tsMsg.time;
-        var msg = tsMsg.data;
+        const t = tsMsg.time;
+        const msg = tsMsg.data;
 
-        var ordStatus = HitBtcOrderEntryGateway.getStatus(msg);
-        var status : Models.OrderStatusReport = {
+        const ordStatus = HitBtcOrderEntryGateway.getStatus(msg);
+
+        let lastQuantity : number = undefined;
+        let lastPrice : number = undefined;
+        
+
+        const status : Models.OrderStatusUpdate = {
             exchangeId: msg.orderId,
             orderId: msg.clientOrderId,
             orderStatus: ordStatus,
             time: t,
-            rejectMessage: msg.orderRejectReason,
-            lastQuantity: msg.lastQuantity > 0 ? msg.lastQuantity / _lotMultiplier : undefined,
-            lastPrice: msg.lastQuantity > 0 ? msg.lastPrice : undefined,
-            leavesQuantity: ordStatus == Models.OrderStatus.Working ? msg.leavesQuantity / _lotMultiplier : undefined,
-            cumQuantity: msg.cumQuantity / _lotMultiplier,
-            averagePrice: msg.averagePrice
         };
+
+        if (msg.lastQuantity > 0 && msg.execReportType === "trade") {
+            status.lastQuantity = msg.lastQuantity / _lotMultiplier;
+            status.lastPrice = msg.lastPrice;
+        }
+
+        if (msg.orderRejectReason)
+            status.rejectMessage = msg.orderRejectReason;
+
+        if (status.leavesQuantity)
+            status.leavesQuantity = msg.leavesQuantity / _lotMultiplier;
+        
+        if (msg.cumQuantity)
+            status.cumQuantity = msg.cumQuantity / _lotMultiplier;
+
+        if (msg.averagePrice)
+            status.averagePrice = msg.averagePrice;
 
         this.OrderUpdate.trigger(status);
     };
 
     private onCancelReject = (tsMsg : Models.Timestamped<CancelReject>) => {
-        var msg = tsMsg.data;
-        var status : Models.OrderStatusReport = {
+        const msg = tsMsg.data;
+        const status : Models.OrderStatusUpdate = {
             orderId: msg.clientOrderId,
             rejectMessage: msg.rejectReasonText,
             orderStatus: Models.OrderStatus.Rejected,
@@ -382,10 +438,10 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     };
 
     private authMsg = <T>(payload : T) : AuthorizedHitBtcMessage<T> => {
-        var msg = {nonce: this._nonce, payload: payload};
+        const msg = {nonce: this._nonce, payload: payload};
         this._nonce += 1;
 
-        var signMsg = m => {
+        const signMsg = m => {
             return crypto.createHmac('sha512', this._secret)
                 .update(JSON.stringify(m))
                 .digest('base64');
@@ -394,16 +450,16 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
         return {apikey: this._apiKey, signature: signMsg(msg), message: msg};
     };
 
-    private sendAuth = <T extends HitBtcPayload>(msgType : string, msg : T) => {
-        var v = {};
+    private sendAuth = <T extends HitBtcPayload>(msgType : string, msg : T, cb?: () => void) => {
+        const v = {};
         v[msgType] = msg;
-        var readyMsg = this.authMsg(v);
-        this._orderEntryWs.send(JSON.stringify(readyMsg));
+        const readyMsg = this.authMsg(v);
+        this._orderEntryWs.send(JSON.stringify(readyMsg), cb);
     };
 
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
     private onConnectionStatusChange = () => {
-        if (this._orderEntryWs.readyState === WebSocket.OPEN) {
+        if (this._orderEntryWs.isConnected) {
             this.ConnectChanged.trigger(Models.ConnectivityStatus.Connected);
         }
         else {
@@ -416,33 +472,25 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
         this.onConnectionStatusChange();
     };
 
-    private onClosed = (code, msg) => {
-        this.onConnectionStatusChange();
-        this._log("close code=%d msg=%s", code, msg);
-    };
-
-    private onError = (err : Error) => {
-        this.onConnectionStatusChange();
-        this._log("error %s", err);
-        throw err;
-    };
-
-    private onMessage = (raw : string) => {
+    private onMessage = (raw : Models.Timestamped<string>) => {
         try {
-            var t = Utils.date();
-            var msg = JSON.parse(raw);
+            const msg = JSON.parse(raw.data);
+
+            if (this._log.debug())
+                this._log.debug(msg, "message");
+
             if (msg.hasOwnProperty("ExecutionReport")) {
-                this.onExecutionReport(new Models.Timestamped(msg.ExecutionReport, t));
+                this.onExecutionReport(new Models.Timestamped(msg.ExecutionReport, raw.time));
             }
             else if (msg.hasOwnProperty("CancelReject")) {
-                this.onCancelReject(new Models.Timestamped(msg.CancelReject, t));
+                this.onCancelReject(new Models.Timestamped(msg.CancelReject, raw.time));
             }
             else {
-                this._log("unhandled message", msg);
+                this._log.info("unhandled message", msg);
             }
         }
         catch (e) {
-            this._log("exception while processing message %s", raw);
+            this._log.error(e, "exception while processing message", raw);
             throw e;
         }
     };
@@ -451,17 +499,17 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
         return shortId.generate();
     }
 
-     _log : Utils.Logger = Utils.log("tribeca:gateway:HitBtcOE");
-    private _apiKey : string;
-    private _secret : string;
-    constructor(config : Config.IConfigProvider) {
+    private readonly _log = log("tribeca:gateway:HitBtcOE");
+    private readonly _apiKey : string;
+    private readonly _secret : string;
+    constructor(config : Config.IConfigProvider, private _symbolProvider: HitBtcSymbolProvider, private _details: HitBtcBaseGateway) {
         this._apiKey = config.GetString("HitBtcApiKey");
         this._secret = config.GetString("HitBtcSecret");
-        this._orderEntryWs = new WebSocket(config.GetString("HitBtcOrderEntryUrl"));
-        this._orderEntryWs.on('open', this.onOpen);
-        this._orderEntryWs.on('message', this.onMessage);
-        this._orderEntryWs.on("close", this.onClosed);
-        this._orderEntryWs.on("error", this.onError);
+        this._orderEntryWs = new WebSocket(config.GetString("HitBtcOrderEntryUrl"), 5000, 
+            this.onMessage, 
+            this.onOpen, 
+            this.onConnectionStatusChange);
+        this._orderEntryWs.connect();
     }
 }
 
@@ -472,14 +520,14 @@ interface HitBtcPositionReport {
 }
 
 class HitBtcPositionGateway implements Interfaces.IPositionGateway {
-    _log : Utils.Logger = Utils.log("tribeca:gateway:HitBtcPG");
+    private readonly _log = log("tribeca:gateway:HitBtcPG");
     PositionUpdate = new Utils.Evt<Models.CurrencyPosition>();
 
     private getAuth = (uri : string) : any => {
-        var nonce : number = new Date().getTime() * 1000; // get rid of *1000 after getting new keys
-        var comb = uri + "?" + querystring.stringify({nonce: nonce, apikey: this._apiKey});
+        const nonce : number = new Date().getTime() * 1000; // get rid of *1000 after getting new keys
+        const comb = uri + "?" + querystring.stringify({nonce: nonce, apikey: this._apiKey});
 
-        var signature = crypto.createHmac('sha512', this._secret)
+        const signature = crypto.createHmac('sha512', this._secret)
                               .update(comb)
                               .digest('hex')
                               .toString()
@@ -491,44 +539,39 @@ class HitBtcPositionGateway implements Interfaces.IPositionGateway {
                 qs: {nonce: nonce.toString(), apikey: this._apiKey}};
     };
 
-    private static convertCurrency(code : string) : Models.Currency {
-        switch (code) {
-            case "USD": return Models.Currency.USD;
-            case "BTC": return Models.Currency.BTC;
-            case "LTC": return Models.Currency.LTC;
-            default: return null;
-        }
-    }
-
     private onTick = () => {
         request.get(
             this.getAuth("/api/1/trading/balance"),
             (err, body, resp) => {
                 try {
-                    var rpts : Array<HitBtcPositionReport> = JSON.parse(resp).balance;
-
+                    const rpts: Array<HitBtcPositionReport> = JSON.parse(resp).balance;
                     if (typeof rpts === 'undefined' || err) {
-                        this._log("Trouble getting positions err: %o body: %o", err, body.body);
+                        this._log.warn(err, "Trouble getting positions", body.body);
                         return;
                     }
 
                     rpts.forEach(r => {
-                        var currency = HitBtcPositionGateway.convertCurrency(r.currency_code);
+                        let currency: Models.Currency;
+                        try {
+                            currency = Models.toCurrency(r.currency_code);
+                        }
+                        catch (e) {
+                            return;
+                        }
                         if (currency == null) return;
-                        var position = new Models.CurrencyPosition(r.cash, r.reserved, currency);
+                        const position = new Models.CurrencyPosition(r.cash, r.reserved, currency);
                         this.PositionUpdate.trigger(position);
                     });
                 }
-                catch (e)
-                {
-                    this._log("Error processing JSON response ", resp);
+                catch (e) {
+                    this._log.error(e, "Error processing JSON response ", resp);
                 }
             });
     };
 
-    private _apiKey : string;
-    private _secret : string;
-    private _pullUrl : string;
+    private readonly _apiKey : string;
+    private readonly _secret : string;
+    private readonly _pullUrl : string;
     constructor(config : Config.IConfigProvider) {
         this._apiKey = config.GetString("HitBtcApiKey");
         this._secret = config.GetString("HitBtcSecret");
@@ -558,23 +601,58 @@ class HitBtcBaseGateway implements Interfaces.IExchangeDetailsGateway {
     name() : string {
         return "HitBtc";
     }
+
+    constructor(public minTickIncrement: number) {}
 }
 
-export class HitBtc extends Interfaces.CombinedGateway {
-    constructor(config : Config.IConfigProvider) {
-        var orderGateway = config.GetString("HitBtcOrderDestination") == "HitBtc" ?
-            <Interfaces.IOrderEntryGateway>new HitBtcOrderEntryGateway(config)
+class HitBtcSymbolProvider {
+    public readonly symbol : string;
+    
+    constructor(pair: Models.CurrencyPair) {
+        this.symbol = Models.fromCurrency(pair.base) + Models.fromCurrency(pair.quote);
+    }
+}
+
+class HitBtc extends Interfaces.CombinedGateway {
+    constructor(config : Config.IConfigProvider, symbolProvider: HitBtcSymbolProvider, step: number, pair: Models.CurrencyPair) {
+        const details = new HitBtcBaseGateway(step);
+        const orderGateway = config.GetString("HitBtcOrderDestination") == "HitBtc" ?
+            <Interfaces.IOrderEntryGateway>new HitBtcOrderEntryGateway(config, symbolProvider, details)
             : new NullGateway.NullOrderGateway();
 
         // Payment actions are not permitted in demo mode -- helpful.
-        var positionGateway = config.GetString("HitBtcPullUrl").indexOf("demo") ?
-            new NullGateway.NullPositionGateway() :
-            new HitBtcPositionGateway(config);
+        let positionGateway : Interfaces.IPositionGateway = new HitBtcPositionGateway(config);
+        if (config.GetString("HitBtcPullUrl").indexOf("demo") > -1) {
+            positionGateway = new NullGateway.NullPositionGateway(pair);
+        }
 
         super(
-            new HitBtcMarketDataGateway(config),
+            new HitBtcMarketDataGateway(config, symbolProvider, step),
             orderGateway,
             positionGateway,
-            new HitBtcBaseGateway());
+            details);
     }
+}
+
+interface HitBtcSymbol {
+    symbol: string,
+    step: string,
+    lot: string,
+    currency: string,
+    commodity: string,
+    takeLiquidityRate: string,
+    provideLiquidityRate: string
+}
+
+export async function createHitBtc(config : Config.IConfigProvider, pair: Models.CurrencyPair) : Promise<Interfaces.CombinedGateway> {
+    const symbolsUrl = config.GetString("HitBtcPullUrl") + "/api/1/public/symbols";
+    const symbols = await Utils.getJSON<{symbols: HitBtcSymbol[]}>(symbolsUrl);
+    const symbolProvider = new HitBtcSymbolProvider(pair);
+
+    for (let s of symbols.symbols) {
+        if (s.symbol === symbolProvider.symbol) 
+            return new HitBtc(config, symbolProvider, parseFloat(s.step), pair);
+    }
+
+    throw new Error("unable to match pair to a hitbtc symbol " + pair.toString());
 }

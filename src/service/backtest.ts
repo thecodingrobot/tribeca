@@ -1,4 +1,3 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="utils.ts" />
 /// <reference path="../common/models.ts" />
 
@@ -34,7 +33,7 @@ class Timed {
 export class BacktestTimeProvider implements Utils.IBacktestingTimeProvider {
     constructor(private _internalTime : moment.Moment, private _endTime : moment.Moment) { }
     
-    utcNow = () => this._internalTime;
+    utcNow = () => this._internalTime.toDate();
     
     private _immediates = new Array<() => void>();
     setImmediate = (action: () => void) => this._immediates.push(action);
@@ -51,16 +50,16 @@ export class BacktestTimeProvider implements Utils.IBacktestingTimeProvider {
     private setAction  = (action: () => void, time: moment.Duration, type : TimedType) => {
         var dueTime = this._internalTime.clone().add(time);
         
-        if (dueTime.diff(this.utcNow()) < 0) {
+        if (Utils.fastDiff(dueTime.toDate(), this.utcNow()) < 0) {
             return;
         }
         
         this._timeouts.push(new Timed(action, dueTime, type, time));
-        this._timeouts.sort((a, b) => a.time.diff(b.time));
+        this._timeouts.sort((a, b) => Utils.fastDiff(a.time.toDate(), b.time.toDate()));
     };
     
     scrollTimeTo = (time : moment.Moment) => {
-        if (time.diff(this.utcNow()) < 0) {
+        if (Utils.fastDiff(time.toDate(), this.utcNow()) < 0) {
             throw new Error("Cannot reverse time!");
         }
         
@@ -68,7 +67,7 @@ export class BacktestTimeProvider implements Utils.IBacktestingTimeProvider {
             this._immediates.pop()();
         }
         
-        while (this._timeouts.length > 0 && _.first(this._timeouts).time.diff(time) < 0) {
+        while (this._timeouts.length > 0 && Utils.fastDiff(_.first(this._timeouts).time.toDate(), time.toDate()) < 0) {
             var evt : Timed = this._timeouts.shift();
             this._internalTime = evt.time;
             evt.action();
@@ -87,7 +86,10 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
     MarketData = new Utils.Evt<Models.Market>();
     MarketTrade = new Utils.Evt<Models.GatewayMarketTrade>();
     
-    OrderUpdate = new Utils.Evt<Models.OrderStatusReport>();
+    OrderUpdate = new Utils.Evt<Models.OrderStatusUpdate>();
+    
+    supportsCancelAllOpenOrders = () : boolean => { return false; };
+    cancelAllOpenOrders = () : Q.Promise<number> => { return Q(0); };
     
     generateClientOrderId = () => {
         return "BACKTEST-" + shortId.generate();
@@ -95,10 +97,10 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
 
     public cancelsByClientOrderId = true;
     
-    private _openBidOrders : {[orderId: string]: Models.BrokeredOrder} = {};
-    private _openAskOrders : {[orderId: string]: Models.BrokeredOrder} = {};
+    private _openBidOrders : {[orderId: string]: Models.OrderStatusReport} = {};
+    private _openAskOrders : {[orderId: string]: Models.OrderStatusReport} = {};
 
-    sendOrder = (order : Models.BrokeredOrder) : Models.OrderGatewayActionReport => {
+    sendOrder = (order : Models.OrderStatusReport) => {
         this.timeProvider.setTimeout(() => {
             if (order.side === Models.Side.Bid) {
                 this._openBidOrders[order.orderId] = order;
@@ -112,60 +114,61 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
             }
             
             this.OrderUpdate.trigger({ orderId: order.orderId, orderStatus: Models.OrderStatus.Working });
-            this.recomputePosition();
         }, moment.duration(3));
-        
-        return new Models.OrderGatewayActionReport(this.timeProvider.utcNow());
     };
 
-    cancelOrder = (cancel : Models.BrokeredCancel) : Models.OrderGatewayActionReport => {
+    cancelOrder = (cancel : Models.OrderStatusReport) => {
         this.timeProvider.setTimeout(() => {
             if (cancel.side === Models.Side.Bid) {
-                var existing = this._openBidOrders[cancel.clientOrderId];
+                var existing = this._openBidOrders[cancel.orderId];
                 if (typeof existing === "undefined") {
-                    this.OrderUpdate.trigger({orderId: cancel.clientOrderId, orderStatus: Models.OrderStatus.Rejected});
+                    this.OrderUpdate.trigger({orderId: cancel.orderId, orderStatus: Models.OrderStatus.Rejected});
                     return;
                 }
                 this._quoteHeld -= existing.price * existing.quantity;
                 this._quoteAmount += existing.price * existing.quantity;
-                delete this._openBidOrders[cancel.clientOrderId];
+                delete this._openBidOrders[cancel.orderId];
             }
             else {
-                var existing = this._openAskOrders[cancel.clientOrderId];
+                var existing = this._openAskOrders[cancel.orderId];
                 if (typeof existing === "undefined") {
-                    this.OrderUpdate.trigger({orderId: cancel.clientOrderId, orderStatus: Models.OrderStatus.Rejected});
+                    this.OrderUpdate.trigger({orderId: cancel.orderId, orderStatus: Models.OrderStatus.Rejected});
                     return;
                 }
                 this._baseHeld -= existing.quantity;
                 this._baseAmount += existing.quantity;
-                delete this._openAskOrders[cancel.clientOrderId];
+                delete this._openAskOrders[cancel.orderId];
             }
             
-            this.OrderUpdate.trigger({ orderId: cancel.clientOrderId, orderStatus: Models.OrderStatus.Cancelled });
-            this.recomputePosition();
+            this.OrderUpdate.trigger({ orderId: cancel.orderId, orderStatus: Models.OrderStatus.Cancelled });
         }, moment.duration(3));
-        
-        return new Models.OrderGatewayActionReport(this.timeProvider.utcNow());
     };
 
-    replaceOrder = (replace : Models.BrokeredReplace) : Models.OrderGatewayActionReport => {
-        this.cancelOrder(new Models.BrokeredCancel(replace.origOrderId, replace.orderId, replace.side, replace.exchangeId));
-        return this.sendOrder(replace);
+    replaceOrder = (replace : Models.OrderStatusReport) => {
+        this.cancelOrder(replace);
+        this.sendOrder(replace);
     };
     
     private onMarketData = (market : Models.Market) => {
-        this._openAskOrders = this.tryToMatch(_.values(this._openAskOrders), market.bids, Models.Side.Ask);
-        this._openBidOrders = this.tryToMatch(_.values(this._openBidOrders), market.asks, Models.Side.Bid);
+        this._openAskOrders = this.tryToMatch(<any>_.values(this._openAskOrders), market.bids, Models.Side.Ask);
+        this._openBidOrders = this.tryToMatch(<any>_.values(this._openBidOrders), market.asks, Models.Side.Bid);
         
         this.MarketData.trigger(market);
     };
     
-    private tryToMatch = (orders: Models.BrokeredOrder[], marketSides: Models.MarketSide[], side: Models.Side) => {
+    private tryToMatch = (orders: Models.OrderStatusReport[], marketSides: Models.MarketSide[], side: Models.Side) => {
+        if (orders.length === 0 || marketSides.length === 0) 
+            return _.keyBy(orders, k => k.orderId);
+        
         var cmp = side === Models.Side.Ask ? (m, o) => o < m : (m, o) => o > m;
         _.forEach(orders, order => {
             _.forEach(marketSides, mkt => {
-                if (cmp(mkt.price, order.price) && order.quantity > 0) {
-                    var update : Models.OrderStatusReport = { orderId: order.orderId, lastPrice: order.price };
+                if ((cmp(mkt.price, order.price) || order.type === Models.OrderType.Market) && order.quantity > 0) {
+                    
+                    var px = order.price;
+                    if (order.type === Models.OrderType.Market) px = mkt.price;
+                    
+                    var update : Models.OrderStatusUpdate = { orderId: order.orderId, lastPrice: px };
                     if (mkt.size >= order.quantity) {
                         update.orderStatus = Models.OrderStatus.Complete;
                         update.lastQuantity = order.quantity;
@@ -179,25 +182,29 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
                     
                     if (side === Models.Side.Bid) {
                         this._baseAmount += update.lastQuantity;
-                        this._quoteHeld -= (update.lastQuantity*order.price);
+                        this._quoteHeld -= (update.lastQuantity*px);
                     }
                     else {
                         this._baseHeld -= update.lastQuantity;
-                        this._quoteAmount += (update.lastQuantity*order.price);
+                        this._quoteAmount += (update.lastQuantity*px);
                     }
-                    this.recomputePosition();
                     
-                    order.quantity -= update.lastQuantity;
+                    order.quantity = order.quantity - update.lastQuantity;
                 };
             });
         });
         
-        return _.indexBy(_.filter(orders, (o: Models.BrokeredOrder) => o.quantity > 0), k => k.orderId);
+        var liveOrders = _.filter(orders, o => o.quantity > 0);
+        
+        if (liveOrders.length > 5)
+            console.warn("more than 5 outstanding " + Models.Side[side] + " orders open");
+        
+        return _.keyBy(liveOrders, k => k.orderId);
     };
     
     private onMarketTrade = (trade : Models.MarketTrade) => {
-        this._openAskOrders = this.tryToMatch(_.values(this._openAskOrders), [trade], Models.Side.Ask);
-        this._openBidOrders = this.tryToMatch(_.values(this._openBidOrders), [trade], Models.Side.Bid);
+        this._openAskOrders = this.tryToMatch(<any>_.values(this._openAskOrders), [trade], Models.Side.Ask);
+        this._openBidOrders = this.tryToMatch(<any>_.values(this._openBidOrders), [trade], Models.Side.Bid);
         
         this.MarketTrade.trigger(new Models.GatewayMarketTrade(trade.price, trade.size, trade.time, false, trade.make_side));
     };
@@ -222,8 +229,10 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
         
         var hasProcessedMktData = false;
         
+        this.timeProvider.setInterval(() => this.recomputePosition(), moment.duration(15, "seconds"));
+        
         _(this._inputData).forEach(i => {
-            this.timeProvider.scrollTimeTo(i.time);
+            this.timeProvider.scrollTimeTo(moment(i.time));
            
             if (typeof i["make_side"] !== "undefined") {
                 this.onMarketTrade(<Models.MarketTrade>i);
@@ -237,10 +246,14 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
                 }
             }
         });
+        
+        this.recomputePosition();        
     };
 }
 
 class BacktestGatewayDetails implements Interfaces.IExchangeDetailsGateway {
+    minTickIncrement: number = 0.01;
+
     public get hasSelfTradePrevention() {
         return false;
     }
@@ -269,31 +282,35 @@ export class BacktestParameters {
     id: string;
 }
 
-export class BacktestPersister<T> implements Persister.ILoadAllByExchangeAndPair<T>, Persister.ILoadLatest<T> {
-    public load = (exchange: Models.Exchange, pair: Models.CurrencyPair, limit: number = null): Q.Promise<T[]> => {
+export class BacktestPersister<T> implements Persister.ILoadAll<T>, Persister.ILoadLatest<T> {
+    public load = (exchange: Models.Exchange, pair: Models.CurrencyPair, limit?: number): Promise<T[]> => {
         return this.loadAll(limit);    
     };
     
-    public loadAll = (limit?: number): Q.Promise<T[]> => { 
-        if (this.initialData) {
-            if (limit) {
-                return Q(_.last(this.initialData, limit));
+    public loadAll = (limit?: number): Promise<T[]> => { 
+        return new Promise<T[]>(() => {
+            if (this.initialData) {
+                if (limit) {
+                    return _.takeRight(this.initialData, limit);
+                }
+                else {
+                    return this.initialData;
+                }
             }
-            else {
-                return Q(this.initialData);
-            }
-        }
-        return Q([]);
+            return [];
+        });
     };
     
     public persist = (report: T) => { };
     
-    public loadLatest = (): Q.Promise<T> => {
+    public loadLatest = (): Promise<T> => {
         if (this.initialData)
-            return Q(_.last(this.initialData));
+            return new Promise(() => _.last(this.initialData));
     };
     
-    constructor(private initialData: T[] = null) {}
+    constructor(private initialData?: T[]) {
+        this.initialData = initialData || null;
+    }
 }
 
 export class BacktestExchange extends Interfaces.CombinedGateway {
@@ -327,7 +344,7 @@ var backtestServer = () => {
     var parameters : BacktestParameters[] = JSON.parse(rawParams);
     if (fs.existsSync(savedProgressFile)) {
         var l = parseInt(fs.readFileSync(savedProgressFile, 'utf8'));
-        parameters = _.last(parameters, l);
+        parameters = _.takeRight(parameters, l);
     }
     else if (fs.existsSync(backtestResultFile)) {
         fs.unlinkSync(backtestResultFile);
@@ -336,7 +353,7 @@ var backtestServer = () => {
     console.log("loaded input data...");
     
     var app = express();
-    app.use(require('body-parser').json());
+    app.use(require('body-parser').json({limit: '200mb'}));
     app.use(require("compression")());
     
     var server = app.listen(5001, () => {
@@ -355,7 +372,7 @@ var backtestServer = () => {
     });
     
     app.get("/nextParameters", (req, res) => {
-        if (_.any(parameters)) {
+        if (_.some(parameters)) {
             var id = parameters.length;
             var served = parameters.shift();
             if (typeof served["id"] === "undefined") 
@@ -365,7 +382,7 @@ var backtestServer = () => {
             res.json(served);
             fs.writeFileSync(savedProgressFile, parameters.length, {encoding: 'utf8'});
             
-            if (!_.any(parameters)) {
+            if (!_.some(parameters)) {
                 console.log("Done serving parameters");
             }
         }
@@ -378,7 +395,8 @@ var backtestServer = () => {
     
     app.post("/result", (req, res) => {
         var params = req.body;
-        console.log("Accept backtest results", params);
+        console.log("Accept backtest results, volume =", params[2].volume.toFixed(2), "val =", 
+            params[1].value.toFixed(2), "qVal =", params[1].quoteValue.toFixed(2));
         fs.appendFileSync(backtestResultFile, JSON.stringify(params)+"\n");
     });
 }

@@ -1,7 +1,9 @@
 /// <reference path="../common/models.ts" />
 /// <reference path="config.ts" />
 /// <reference path="utils.ts" />
+///<reference path="interfaces.ts"/>
 
+import * as moment from "moment";
 import Config = require("./config");
 import Models = require("../common/models");
 import Utils = require("./utils");
@@ -69,7 +71,7 @@ export class ExchangeQuoter {
             case Models.OrderStatus.Cancelled:
             case Models.OrderStatus.Complete:
             case Models.OrderStatus.Rejected:
-                var bySide = this._activeQuote;
+                const bySide = this._activeQuote;
                 if (bySide !== null && bySide.orderId === o.orderId) {
                     this._activeQuote = null;
                 }
@@ -83,15 +85,12 @@ export class ExchangeQuoter {
             return Models.QuoteSent.UnableToSend;
 
         if (this._activeQuote !== null) {
-            if (this._activeQuote.quote.equals(q.data)) {
-                return Models.QuoteSent.UnsentDuplicate;
-            }
             return this.modify(q);
         }
         return this.start(q);
     };
 
-    public cancelQuote = (t: moment.Moment): Models.QuoteSent => {
+    public cancelQuote = (t: Date): Models.QuoteSent => {
         if (this._exchBroker.connectStatus !== Models.ConnectivityStatus.Connected)
             return Models.QuoteSent.UnableToSend;
 
@@ -105,28 +104,25 @@ export class ExchangeQuoter {
     };
 
     private start = (q: Models.Timestamped<Models.Quote>): Models.QuoteSent => {
-        var existing = this._activeQuote;
-        if (existing !== null && existing.quote.equals(q.data)) {
-            return Models.QuoteSent.UnsentDuplicate;
-        }
+        const existing = this._activeQuote;
 
-        var newOrder = new Models.SubmitNewOrder(this._side, q.data.size, Models.OrderType.Limit,
-            q.data.price, Models.TimeInForce.GTC, this._exchange, q.time);
-        var sent = this._broker.sendOrder(newOrder);
+        const newOrder = new Models.SubmitNewOrder(this._side, q.data.size, Models.OrderType.Limit,
+            q.data.price, Models.TimeInForce.GTC, this._exchange, q.time, true, Models.OrderSource.Quote);
+        const sent = this._broker.sendOrder(newOrder);
 
-        var quoteOrder = new QuoteOrder(q.data, sent.sentOrderClientId);
+        const quoteOrder = new QuoteOrder(q.data, sent.sentOrderClientId);
         this.quotesSent.push(quoteOrder);
         this._activeQuote = quoteOrder;
 
         return Models.QuoteSent.First;
     };
 
-    private stop = (t: moment.Moment): Models.QuoteSent => {
+    private stop = (t: Date): Models.QuoteSent => {
         if (this._activeQuote === null) {
             return Models.QuoteSent.UnsentDelete;
         }
 
-        var cxl = new Models.OrderCancel(this._activeQuote.orderId, this._exchange, t);
+        const cxl = new Models.OrderCancel(this._activeQuote.orderId, this._exchange, t);
         this._broker.cancelOrder(cxl);
         this._activeQuote = null;
         return Models.QuoteSent.Delete;
