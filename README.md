@@ -10,6 +10,14 @@ Runs on the latest node.js (v7.8 or greater). Persistence is acheived using mong
 
 ### Docker compose installation
 
+1. Install [docker compose](https://docs.docker.com/compose/install/).
+
+2. Change the environment variables of `env` file to match your desired [configuration](https://github.com/michaelgrosner/tribeca#configuration). Input your exchange connectivity information, account information, and mongoDB credentials.
+
+3. Run `docker-compose up -d --build`. If you run `docker-compose ps`, you should see the containers running.
+
+### Docker Installation
+
 1. Please install [docker](https://www.docker.com/) for your system before preceeding. Requires at least Docker 1.7.1. Mac/Windows only: Ensure boot2docker or docker-machine is set up, depending on Docker version. See [the docs](https://docs.docker.com/installation/mac/) for more help.
 
 2. Set up mongodb. If you do not have a mongodb instance already running: `docker run -p 27017:27017 --name tribeca-mongo -d mongo`.
