@@ -1,5 +1,6 @@
 import bunyan = require("bunyan");
 import * as _ from "lodash";
+import {LogLevel} from "bunyan";
 
 export default function log(name: string) : bunyan {
     // don't log while testing
@@ -8,7 +9,7 @@ export default function log(name: string) : bunyan {
         return bunyan.createLogger({name: name, stream: process.stdout, level: bunyan.FATAL});
     }
 
-    let level = "info";
+    let level: LogLevel = "info";
     if (_.includes(process.argv, "debug")) {
         level = "debug";
     }

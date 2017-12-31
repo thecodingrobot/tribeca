@@ -327,14 +327,6 @@ import express = require('express');
 import util = require("util");
 
 var backtestServer = () => {
-    ["uncaughtException", "exit", "SIGINT", "SIGTERM"].forEach(reason => {
-        process.on(reason, (e?) => {
-            console.log(util.format("Terminating!", reason, e, (typeof e !== "undefined" ? e.stack : undefined)));
-            
-            process.exit(1);
-        });
-    });
-    
     var mdFile = process.env['MD_FILE'];
     var paramFile = process.env['PARAM_FILE'];
     var savedProgressFile = process.env["PROGRESS_FILE"] || "nextParameters_saved.txt";

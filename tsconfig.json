@@ -1,11 +1,18 @@
 {
-    "compilerOptions": {
-        "module": "commonjs",
-        "target": "es6",
-        "rootDir": ".",
-        "sourceMap": false
-    },
-    "exclude": [
-        "node_modules"
-    ]
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es6",
+    "rootDir": ".",
+    "outDir": "tribeca",
+    "sourceMap": false,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "moduleResolution": "node",
+    "experimentalDecorators": true,
+    "noImplicitThis": true,
+    "noImplicitReturns": true
+  },
+  "exclude": [
+    "node_modules"
+  ]
 }

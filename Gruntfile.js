@@ -61,12 +61,12 @@ module.exports = function (grunt) {
                 dest: "tribeca/service/admin"
             }
         },
-        
+
         browserify: {
             dist: {
                 files: {
                     "tribeca/service/admin/js/admin/bundle.min.js": ["tribeca/service/admin/js/admin/client.js"]
-                },
+                }
             }
         }
     });

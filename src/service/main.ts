@@ -19,13 +19,10 @@
 /// <reference path="web.ts"/>
 
 import _ = require("lodash");
-import Q = require("q");
 import path = require("path");
 import express = require('express');
 import util = require('util');
 import moment = require("moment");
-import fs = require("fs");
-import bunyan = require("bunyan");
 import request = require('request');
 import http = require("http");
 import socket_io = require('socket.io')
@@ -66,6 +63,7 @@ import QuotingStyleRegistry = require("./quoting-styles/style-registry");
 import MidMarket = require("./quoting-styles/mid-market");
 import TopJoin = require("./quoting-styles/top-join");
 import Depth = require("./quoting-styles/depth");
+import {Db} from "mongodb";
 
 const serverUrl = 'BACKTEST_SERVER_URL' in process.env ? process.env['BACKTEST_SERVER_URL'] : "http://localhost:5001";
 
@@ -194,7 +192,7 @@ const liveTradingSetup = () : SimulationClasses => {
             case Models.Exchange.OkCoin: return OkCoin.createOkCoin(config, pair);
             case Models.Exchange.Null: return NullGw.createNullGateway(config, pair);
             case Models.Exchange.Bitfinex: return Bitfinex.createBitfinex(timeProvider, config, pair);
-            case Models.Exchange.Bitstamp: return Bitstamp.createBitstamp(timeProvider, config, pair));
+            case Models.Exchange.Bitstamp: return Bitstamp.createBitstamp(timeProvider, config, pair);
             default: throw new Error("no gateway provided for exchange " + exchange);
         }
     };
