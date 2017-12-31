@@ -4,7 +4,6 @@
 
 import Utils = require("./utils");
 import Models = require("../common/models");
-import Messaging = require("../common/messaging");
 import q = require("q");
 
 export interface IExchangeDetailsGateway {
@@ -72,7 +71,7 @@ export interface ITradeBroker {
 
 export interface IOrderBroker extends ITradeBroker {
     sendOrder(order: Models.SubmitNewOrder): Models.SentOrder;
-    cancelOrder(cancel: Models.OrderCancel);
+    cancelOrder(cancel: Models.OrderCancel): void;
     replaceOrder(replace: Models.CancelReplaceOrder): Models.SentOrder;
     OrderUpdate: Utils.Evt<Models.OrderStatusReport>;
     cancelOpenOrders(): void;

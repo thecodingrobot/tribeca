@@ -3,10 +3,7 @@
 /// <reference path="utils.ts" />
 ///<reference path="interfaces.ts"/>
 
-import * as moment from "moment";
-import Config = require("./config");
 import Models = require("../common/models");
-import Utils = require("./utils");
 import Interfaces = require("./interfaces");
 
 class QuoteOrder {
@@ -104,8 +101,6 @@ export class ExchangeQuoter {
     };
 
     private start = (q: Models.Timestamped<Models.Quote>): Models.QuoteSent => {
-        const existing = this._activeQuote;
-
         const newOrder = new Models.SubmitNewOrder(this._side, q.data.size, Models.OrderType.Limit,
             q.data.price, Models.TimeInForce.GTC, this._exchange, q.time, true, Models.OrderSource.Quote);
         const sent = this._broker.sendOrder(newOrder);

@@ -5,12 +5,13 @@
     "rootDir": ".",
     "outDir": "tribeca",
     "sourceMap": false,
-//    "strictNullChecks": true,
+    "alwaysStrict": true,
     "strictFunctionTypes": true,
     "moduleResolution": "node",
-    "experimentalDecorators": true
-//    "noImplicitThis": true,
-//    "noImplicitReturns": true
+    "experimentalDecorators": true,
+    //"noUnusedLocals": true,
+    //"noImplicitThis": true
+    "noImplicitReturns": true
   },
   "exclude": [
     "node_modules"

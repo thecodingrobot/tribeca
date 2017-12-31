@@ -3,22 +3,18 @@
 /// <reference path="../common/messaging.ts" />
 ///<reference path="persister.ts"/>
 
-import Models = require("../common/models");
 import Messaging = require("../common/messaging");
-import Utils = require("./utils");
 import _ = require("lodash");
-import util = require("util");
 import express = require("express");
-import Q = require("q");
 import Persister = require("./persister");
 import moment = require("moment");
 
 export class StandaloneHttpPublisher<T> {
     constructor(
         private _wrapped: Messaging.IPublish<T>,
-        private route: string,
-        private _httpApp: express.Application,
-        private _persister: Persister.ILoadAll<T>) {
+        route: string,
+        _httpApp: express.Application,
+        _persister: Persister.ILoadAll<T>) {
         
         _httpApp.get("/data/" + route, (req: express.Request, res: express.Response) => {
             var getParameter = <T>(pName: string, cvt: (r: string) => T) => {

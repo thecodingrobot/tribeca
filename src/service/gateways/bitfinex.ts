@@ -8,13 +8,10 @@
 import Q = require("q");
 import crypto = require("crypto");
 import request = require("request");
-import url = require("url");
-import querystring = require("querystring");
 import Config = require("../config");
 import NullGateway = require("./nullgw");
 import Models = require("../../common/models");
 import Utils = require("../utils");
-import util = require("util");
 import Interfaces = require("../interfaces");
 import moment = require("moment");
 import _ = require("lodash");
@@ -46,7 +43,7 @@ function decodeSide(side: string) {
     switch (side) {
         case "buy": return Models.Side.Bid;
         case "sell": return Models.Side.Ask;
-        default: return Models.Side.Unknown;
+        default: throw new Error("Unknown side: " + side)
     }
 }
 
@@ -323,10 +320,9 @@ class BitfinexOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     }
 
     private _since = moment.utc();
-    private _log = log("tribeca:gateway:BitfinexOE");
     constructor(
         timeProvider: Utils.ITimeProvider,
-        private _details: BitfinexBaseGateway,
+        _details: BitfinexBaseGateway,
         private _http: BitfinexHttp,
         private _symbolProvider: BitfinexSymbolProvider) {
 
@@ -477,7 +473,6 @@ class BitfinexPositionGateway implements Interfaces.IPositionGateway {
         }).done();
     }
 
-    private _log = log("tribeca:gateway:BitfinexPG");
     constructor(timeProvider: Utils.ITimeProvider, private _http: BitfinexHttp) {
         timeProvider.setInterval(this.onRefreshPositions, moment.duration(15, "seconds"));
         this.onRefreshPositions();

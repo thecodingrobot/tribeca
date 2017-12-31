@@ -139,9 +139,9 @@ describe("Test event handling", function () {
         const Evt = new Utils.Evt<number>();
 
         const data: number[] = [];
-        const handler_1 = (result) => result && data.push(result * 1);
-        const handler_2 = (result) => result && data.push(result * 2);
-        const handler_3 = (result) => result && data.push(result * 3);
+        const handler_1 = (result: number) => result && data.push(result * 1);
+        const handler_2 = (result: number) => result && data.push(result * 2);
+        const handler_3 = (result: number) => result && data.push(result * 3);
         Evt.on(handler_1);
         Evt.on(handler_2);
         Evt.on(handler_3);
@@ -155,9 +155,9 @@ describe("Test event handling", function () {
         const Evt = new Utils.Evt<number>();
 
         const data: number[] = [];
-        const handler_1 = (result) => result && data.push(result * 1);
-        const handler_2 = (result) => result && data.push(result * 2);
-        const handler_3 = (result) => result && data.push(result * 3);
+        const handler_1 = (result: number) => result && data.push(result * 1);
+        const handler_2 = (result: number) => result && data.push(result * 2);
+        const handler_3 = (result: number) => result && data.push(result * 3);
         Evt.on(handler_1);
         Evt.on(handler_2);
         Evt.on(handler_3);

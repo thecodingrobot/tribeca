@@ -14,8 +14,6 @@ import Models = require("../../common/models");
 import Utils = require("../utils");
 import Interfaces = require("../interfaces");
 import io = require("socket.io-client");
-import moment = require("moment");
-import util = require("util");
 import * as Q from "q";
 import log from "../logging";
 const shortId = require("shortid");
@@ -239,12 +237,12 @@ class HitBtcMarketDataGateway implements Interfaces.IMarketDataGateway {
     };
     
     private onTrade = (t: MarketTrade) => {
-        let side : Models.Side = Models.Side.Unknown;
+        let side : Models.Side;
         if (this._lastAsks.any() && this._lastBids.any()) {
             const distance_from_bid = Math.abs(this._lastBids.max().price - t.price);
             const distance_from_ask = Math.abs(this._lastAsks.min().price - t.price);
             if (distance_from_bid < distance_from_ask) side = Models.Side.Bid;
-            if (distance_from_bid > distance_from_ask) side = Models.Side.Ask;
+            if (distance_from_bid >= distance_from_ask) side = Models.Side.Ask;
         }
         
         this.MarketTrade.trigger(new Models.GatewayMarketTrade(t.price, t.amount, new Date(), false, side));
@@ -255,7 +253,7 @@ class HitBtcMarketDataGateway implements Interfaces.IMarketDataGateway {
     constructor(
             config : Config.IConfigProvider, 
             private readonly _symbolProvider: HitBtcSymbolProvider, 
-            private readonly _minTick: number) {
+            readonly _minTick: number) {
 
         this._marketDataWs = new WebSocket(
             config.GetString("HitBtcMarketDataUrl"), 5000, 
@@ -502,7 +500,7 @@ class HitBtcOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     private readonly _log = log("tribeca:gateway:HitBtcOE");
     private readonly _apiKey : string;
     private readonly _secret : string;
-    constructor(config : Config.IConfigProvider, private _symbolProvider: HitBtcSymbolProvider, private _details: HitBtcBaseGateway) {
+    constructor(config : Config.IConfigProvider, private _symbolProvider: HitBtcSymbolProvider, _details: HitBtcBaseGateway) {
         this._apiKey = config.GetString("HitBtcApiKey");
         this._secret = config.GetString("HitBtcSecret");
         this._orderEntryWs = new WebSocket(config.GetString("HitBtcOrderEntryUrl"), 5000, 

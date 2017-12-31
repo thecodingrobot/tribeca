@@ -3,10 +3,10 @@
 import StyleHelpers = require("./helpers");
 import Models = require("../../common/models");
 import _ = require("lodash");
+import {QuotingMode} from "../../common/models";
 
 class NullQuoteGenerator implements StyleHelpers.QuoteStyle {
-	Mode = null;
-    
+    Mode: QuotingMode;
     GenerateQuote = (input: StyleHelpers.QuoteInput) : StyleHelpers.GeneratedQuote|null => {
 		return null;
 	};

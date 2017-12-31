@@ -11,22 +11,14 @@
 /// <reference path="quoting-parameters.ts"/>
 /// <reference path="quoting-engine.ts"/>
 
-import Config = require("./config");
 import Models = require("../common/models");
 import Messaging = require("../common/messaging");
 import Utils = require("./utils");
 import Interfaces = require("./interfaces");
 import Quoter = require("./quoter");
-import Safety = require("./safety");
-import util = require("util");
 import _ = require("lodash");
-import Statistics = require("./statistics");
 import Active = require("./active-state");
 import FairValue = require("./fair-value");
-import MarketFiltration = require("./market-filtration");
-import QuotingParameters = require("./quoting-parameters");
-import PositionManagement = require("./position-management");
-import moment = require('moment');
 import QuotingEngine = require("./quoting-engine");
 import log from "./logging";
 
@@ -43,14 +35,14 @@ export class QuoteSender {
     }
 
     constructor(
-            private _timeProvider: Utils.ITimeProvider,
+            _timeProvider: Utils.ITimeProvider,
             private _quotingEngine: QuotingEngine.QuotingEngine,
             private _statusPublisher: Messaging.IPublish<Models.TwoSidedQuoteStatus>,
             private _quoter: Quoter.Quoter,
             private _activeRepo: Active.ActiveRepository,
             private _positionBroker: Interfaces.IPositionBroker,
-            private _fv: FairValue.FairValueEngine,
-            private _broker: Interfaces.IMarketDataBroker,
+            _fv: FairValue.FairValueEngine,
+            _broker: Interfaces.IMarketDataBroker,
             private _details: Interfaces.IBroker) {
         _activeRepo.NewParameters.on(() => this.sendQuote(_timeProvider.utcNow()));
         _quotingEngine.QuoteChanged.on(() => this.sendQuote(Utils.timeOrDefault(_quotingEngine.latestQuote, _timeProvider)));
@@ -61,8 +53,8 @@ export class QuoteSender {
         var oppSide = side === Models.Side.Bid ? Models.Side.Ask : Models.Side.Bid;
 
         var doesQuoteCross = oppSide === Models.Side.Bid
-            ? (a, b) => a.price >= b
-            : (a, b) => a.price <= b;
+            ? (a: Models.Quote, b: number) => a.price >= b
+            : (a: Models.Quote, b: number) => a.price <= b;
 
         var qs = this._quoter.quotesSent(oppSide);
         for (var qi = 0; qi < qs.length; qi++) {

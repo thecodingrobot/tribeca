@@ -13,17 +13,11 @@
 /// <reference path="position-management.ts"/>
 /// <reference path="./quoting-styles/style-registry.ts"/>
 
-import Config = require("./config");
 import Models = require("../common/models");
 import Messaging = require("../common/messaging");
 import Utils = require("./utils");
 import Interfaces = require("./interfaces");
-import Quoter = require("./quoter");
 import Safety = require("./safety");
-import util = require("util");
-import _ = require("lodash");
-import Statistics = require("./statistics");
-import Active = require("./active-state");
 import FairValue = require("./fair-value");
 import MarketFiltration = require("./market-filtration");
 import QuotingParameters = require("./quoting-parameters");
@@ -51,18 +45,18 @@ export class QuotingEngine {
 
     constructor(
         private _registry: QuotingStyleRegistry.QuotingStyleRegistry,
-        private _timeProvider: Utils.ITimeProvider,
+        _timeProvider: Utils.ITimeProvider,
         private _filteredMarkets: MarketFiltration.MarketFiltration,
         private _fvEngine: FairValue.FairValueEngine,
         private _qlParamRepo: QuotingParameters.QuotingParametersRepository,
         private _quotePublisher: Messaging.IPublish<Models.TwoSidedQuote>,
-        private _orderBroker: Interfaces.IOrderBroker,
+        _orderBroker: Interfaces.IOrderBroker,
         private _positionBroker: Interfaces.IPositionBroker,
         private _details: Interfaces.IBroker,
         private _ewma: Interfaces.IEwmaCalculator,
         private _targetPosition: PositionManagement.TargetBasePositionManager,
         private _safeties: Safety.SafetyCalculator) {
-        var recalcWithoutInputTime = () => this.recalcQuote(_timeProvider.utcNow());
+        const recalcWithoutInputTime = () => this.recalcQuote(_timeProvider.utcNow());
 
         _filteredMarkets.FilteredMarketChanged.on(m => this.recalcQuote(Utils.timeOrDefault(m, _timeProvider)));
         _qlParamRepo.NewParameters.on(recalcWithoutInputTime);

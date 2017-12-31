@@ -21,7 +21,7 @@ class Repository<T> implements Interfaces.IRepository<T> {
         private _validator: (a: T) => boolean,
         private _paramsEqual: (a: T, b: T) => boolean,
         defaultParameter: T,
-        private _rec: Messaging.IReceive<T>,
+        _rec: Messaging.IReceive<T>,
         private _pub: Messaging.IPublish<T>) {
             
         this._log.info("Starting parameter:", defaultParameter);

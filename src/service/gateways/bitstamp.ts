@@ -12,7 +12,6 @@ import Pusher = require("pusher-js");
 import log from "../logging";
 import Logger = require("bunyan");
 import shortId = require("shortid");
-import {Side} from "../../common/models";
 
 interface OrderBook {
     timestamp?: string;        // only present in the http get
@@ -24,12 +23,13 @@ interface Ticker {
     id: string;
     amount: number;
     price: number;
+    type: Models.Side
 }
 
 interface NewOrderAck {
     id: string;
     datetime: string;
-    type: number; //  buy or sell (0 - buy; 1 - sell)
+    type: Models.Side; //  buy or sell (0 - buy; 1 - sell)
     price: number;
     amount: number;
 }
@@ -150,7 +150,6 @@ class PusherClient<T> {
 
 class BitstampMarketDataGateway implements Interfaces.IMarketDataGateway {
     private _client: PusherClient<OrderBook | Ticker>;
-    private _log: Logger = log("tribeca:gateway:BitstampMD");
 
     MarketData = new Utils.Evt<Models.Market>();
     MarketTrade = new Utils.Evt<Models.GatewayMarketTrade>();
@@ -169,7 +168,7 @@ class BitstampMarketDataGateway implements Interfaces.IMarketDataGateway {
     };
 
     private onTicker = (message: Models.Timestamped<Ticker>) => {
-        const trd = new Models.GatewayMarketTrade(message.data.price, message.data.amount, message.time, false, Side.Unknown);
+        const trd = new Models.GatewayMarketTrade(message.data.price, message.data.amount, message.time, false, message.data.type);
         this.MarketTrade.trigger(trd);
     };
 

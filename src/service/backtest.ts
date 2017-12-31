@@ -1,21 +1,16 @@
 /// <reference path="utils.ts" />
 /// <reference path="../common/models.ts" />
 
-import Config = require("./config");
 import Models = require("../common/models");
 import Utils = require("./utils");
 import Interfaces = require("./interfaces");
 import moment = require("moment");
 import _ = require('lodash');
 import fs = require("fs");
-import mongo = require("mongodb");
 import Persister = require("./persister");
 import Q = require("q");
-import stream = require("stream");
 
 var shortId = require("shortid");
-var Deque = require("collections/deque");
-var uuid = require('node-uuid');
 
 enum TimedType {
     Interval,
@@ -31,7 +26,7 @@ class Timed {
 }
 
 export class BacktestTimeProvider implements Utils.IBacktestingTimeProvider {
-    constructor(private _internalTime : moment.Moment, private _endTime : moment.Moment) { }
+    constructor(private _internalTime : moment.Moment, _endTime : moment.Moment) { }
     
     utcNow = () => this._internalTime.toDate();
     
@@ -305,7 +300,8 @@ export class BacktestPersister<T> implements Persister.ILoadAll<T>, Persister.IL
     
     public loadLatest = (): Promise<T> => {
         if (this.initialData)
-            return new Promise(() => _.last(this.initialData));
+            return new Promise((resolve) => resolve(_.last(this.initialData)));
+        return new Promise(resolve => resolve());
     };
     
     constructor(private initialData?: T[]) {
@@ -324,7 +320,6 @@ export class BacktestExchange extends Interfaces.CombinedGateway {
 // backtest server
 
 import express = require('express');
-import util = require("util");
 
 var backtestServer = () => {
     var mdFile = process.env['MD_FILE'];

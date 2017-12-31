@@ -4,12 +4,10 @@
 /// <reference path="utils.ts" />
 /// <reference path="interfaces.ts"/>
 
-import Config = require("./config");
 import Models = require("../common/models");
 import Messaging = require("../common/messaging");
 import Utils = require("./utils");
 import Interfaces = require("./interfaces");
-import Safety = require("./safety");
 import log from "./logging";
 
 export class ActiveRepository implements Interfaces.IRepository<boolean> {
@@ -30,7 +28,7 @@ export class ActiveRepository implements Interfaces.IRepository<boolean> {
     constructor(startQuoting: boolean,
         private _exchangeConnectivity: Interfaces.IBrokerConnectivity,
         private _pub: Messaging.IPublish<boolean>,
-        private _rec: Messaging.IReceive<boolean>) {
+        _rec: Messaging.IReceive<boolean>) {
         this._log.info("Starting saved quoting state: ", startQuoting);
         this._savedQuotingMode = startQuoting;
 

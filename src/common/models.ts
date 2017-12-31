@@ -1,4 +1,3 @@
-import * as _ from "lodash";
 import * as moment from "moment"
 
 export interface ITimestamped {
@@ -104,7 +103,7 @@ export function fromCurrency(c: Currency) : string|undefined {
 export enum GatewayType { MarketData, OrderEntry, Position }
 export enum ConnectivityStatus { Connected, Disconnected }
 export enum Exchange { Null, HitBtc, OkCoin, AtlasAts, BtcChina, Coinbase, Bitfinex, Bitstamp }
-export enum Side { Bid, Ask, Unknown }
+export enum Side { Bid, Ask }
 export enum OrderType { Limit, Market }
 export enum TimeInForce { IOC, FOK, GTC }
 export enum OrderStatus { New, Working, Complete, Cancelled, Rejected, Other }

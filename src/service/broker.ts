@@ -10,11 +10,9 @@ import Models = require("../common/models");
 import Messaging = require("../common/messaging");
 import Utils = require("./utils");
 import _ = require("lodash");
-import mongodb = require('mongodb');
 import Q = require("q");
 import Interfaces = require("./interfaces");
 import Persister = require("./persister");
-import util = require("util");
 import Messages = require("./messages");
 import * as moment from "moment";
 import log from "./logging";
@@ -49,7 +47,7 @@ export class MarketDataBroker implements Interfaces.IMarketDataBroker {
         this._mdGateway.MarketData.on(this.handleMarketData);
         this._mdGateway.ConnectChanged.on(s => {
             if (s == Models.ConnectivityStatus.Disconnected) this._currentBook = null;
-            _messages.publish("MD gw " + Models.ConnectivityStatus[s]);
+            this._messages.publish("MD gw " + Models.ConnectivityStatus[s]);
         });
     }
 }
@@ -194,7 +192,7 @@ export class OrderBroker implements Interfaces.IOrderBroker {
                     existingExchangeIdsToClientIds: this._orderCache.exchIdsToClientIds,
                     existingIds: Array.from(this._orderCache.allOrders.keys())
                 }, "no existing order for non-New update!");
-                return;
+                return undefined;
             }
         }
 
@@ -341,10 +339,10 @@ export class OrderBroker implements Interfaces.IOrderBroker {
                 private _tradePersister : Persister.IPersist<Models.Trade>,
                 private _orderStatusPublisher : Messaging.IPublish<Models.OrderStatusReport>,
                 private _tradePublisher : Messaging.IPublish<Models.Trade>,
-                private _submittedOrderReciever : Messaging.IReceive<Models.OrderRequestFromUI>,
-                private _cancelOrderReciever : Messaging.IReceive<Models.OrderStatusReport>,
-                private _cancelAllOrdersReciever : Messaging.IReceive<Models.CancelAllOrdersRequest>,
-                private _messages : Messages.MessagesPubisher,
+                _submittedOrderReciever : Messaging.IReceive<Models.OrderRequestFromUI>,
+                _cancelOrderReciever : Messaging.IReceive<Models.OrderStatusReport>,
+                _cancelAllOrdersReciever : Messaging.IReceive<Models.CancelAllOrdersRequest>,
+                _messages : Messages.MessagesPubisher,
                 private _orderCache : OrderStateCache,
                 initOrders : Models.OrderStatusReport[],
                 initTrades : Models.Trade[],
@@ -395,8 +393,6 @@ export class OrderBroker implements Interfaces.IOrderBroker {
 }
 
 export class PositionBroker implements Interfaces.IPositionBroker {
-    private _log = log("pos:broker");
-
     public NewReport = new Utils.Evt<Models.PositionReport>();
 
     private _report : Models.PositionReport = null;

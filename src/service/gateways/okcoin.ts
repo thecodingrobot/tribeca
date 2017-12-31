@@ -15,7 +15,6 @@ import Models = require("../../common/models");
 import Utils = require("../utils");
 import util = require("util");
 import Interfaces = require("../interfaces");
-import moment = require("moment");
 import _ = require("lodash");
 import log from "../logging";
 var shortId = require("shortid");
@@ -168,7 +167,6 @@ class OkCoinMarketDataGateway implements Interfaces.IMarketDataGateway {
         this.MarketData.trigger(mkt);
     };
 
-    private _log = log("tribeca:gateway:OkCoinMD");
     constructor(socket : OkCoinWebsocket, symbolProvider: OkCoinSymbolProvider) {
         var depthChannel = "ok_" + symbolProvider.symbolWithoutUnderscore + "_depth";
         var tradesChannel = "ok_" + symbolProvider.symbolWithoutUnderscore + "_trades_v1";
@@ -429,7 +427,6 @@ class OkCoinPositionGateway implements Interfaces.IPositionGateway {
         }).done();
     };
 
-    private _log = log("tribeca:gateway:OkCoinPG");
     constructor(private _http : OkCoinHttp) {
         setInterval(this.trigger, 15000);
         setTimeout(this.trigger, 10);

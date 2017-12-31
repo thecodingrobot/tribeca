@@ -4,8 +4,6 @@
 
 import angular = require("angular");
 import Models = require("../common/models");
-import io = require("socket.io-client");
-import moment = require("moment");
 import Messaging = require("../common/messaging");
 import Shared = require("./shared_directives");
 
@@ -16,7 +14,7 @@ class FormViewModel<T> {
     connected: boolean = false;
 
     constructor(defaultParameter: T,
-        private _sub: Messaging.ISubscribe<T>,
+        _sub: Messaging.ISubscribe<T>,
         private _fire: Messaging.IFire<T>,
         private _submitConverter: (disp: T) => T = null) {
         if (this._submitConverter === null)
