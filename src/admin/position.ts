@@ -24,7 +24,7 @@ interface PositionScope extends ng.IScope {
 }
 
 var PositionController = ($scope : PositionScope, $log : ng.ILogService, subscriberFactory : Shared.SubscriberFactory, product: Shared.ProductState) => {
-    const toAmt = (a: number) : string => a.toFixed(product.fixed+1);
+    const toAmt = (a: number|string) : string => Number(a).toFixed(product.fixed+1);
     
     var clearPosition = () => {
         $scope.baseCurrency = null;
