@@ -92,15 +92,15 @@ describe("BacktestTests", () => {
 describe("BacktestGatewayTests", () => {
     it("should read market data", () => {
         var inputData : Array<Models.Market | Models.MarketTrade> = [
-            new Models.Market([new Models.MarketSide(10, 5)], [new Models.MarketSide(20, 5)], Moment.unix(1)),
-            new Models.Market([new Models.MarketSide(15, 5)], [new Models.MarketSide(20, 5)], Moment.unix(10)),
+            new Models.Market([new Models.MarketSide(10, 5)], [new Models.MarketSide(20, 5)], Moment.unix(1).toDate()),
+            new Models.Market([new Models.MarketSide(15, 5)], [new Models.MarketSide(20, 5)], Moment.unix(10).toDate()),
         ];
 
         var timeProvider = new Backtest.BacktestTimeProvider(Moment.unix(1), Moment.unix(40));
         var gateway = new Backtest.BacktestGateway(inputData, 10, 5000, timeProvider);
 
         gateway.MarketData.on(m => {
-            gateway.sendOrder(new Models.BrokeredOrder("A", Models.Side.Ask, 3, Models.OrderType.Limit, 12, Models.TimeInForce.GTC, Models.Exchange.Null));
+            gateway.sendOrder(null/*new Models.BrokeredOrder("A", Models.Side.Ask, 3, Models.OrderType.Limit, 12, Models.TimeInForce.GTC, Models.Exchange.Null)*/);
         });
 
         var gotTrade = false;
@@ -118,7 +118,7 @@ describe("BacktestGatewayTests", () => {
 
         gateway.run();
 
-        assert(gotTrade === true, "never got trade");
+        assert.equal(gotTrade, true, "never got trade");
     });
 });
 

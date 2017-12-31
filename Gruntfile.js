@@ -27,29 +27,16 @@ module.exports = function (grunt) {
         },
 
         ts: {
-            options: {
-                sourceMap: true,
-                comments: false,               // same as !removeComments. [true | false (default)]
-                declaration: false,            // generate a declaration .d.ts file for every output js file. [true | false (default)]
-                fast: 'always'
-            },
-
             service: {
                 src: serviceFiles,
                 outDir: 'tribeca',
-                options: {
-                    target: 'es6',
-                    module: 'commonjs'
-                }
+                tsconfig: true
             },
 
             admin: {
                 src: adminFiles,
                 outDir: 'tribeca/service/admin/js',
-                options: {
-                    target: 'es6',
-                    module: 'commonjs'
-                }
+                tsconfig: true
             }
         },
 

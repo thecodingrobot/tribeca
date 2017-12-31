@@ -32,7 +32,7 @@ var TradeSafetyController = ($scope : TradeSafetyScope, $log : ng.ILogService, s
         $scope.sellSafety = null;
     };
 
-    var subscriber = subscriberFactory.getSubscriber($scope, Messaging.Topics.TradeSafetyValue)
+    var subscriber = subscriberFactory.getSubscriber<Models.TradeSafety>($scope, Messaging.Topics.TradeSafetyValue)
         .registerConnectHandler(clear)
         .registerSubscriber(updateValue, us => us.forEach(updateValue));
 

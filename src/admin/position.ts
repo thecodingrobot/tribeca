@@ -48,7 +48,7 @@ var PositionController = ($scope : PositionScope, $log : ng.ILogService, subscri
         $scope.quoteValue = toAmt(position.quoteValue);
     };
 
-    var positionSubscriber = subscriberFactory.getSubscriber($scope, Messaging.Topics.Position)
+    var positionSubscriber = subscriberFactory.getSubscriber<Models.PositionReport>($scope, Messaging.Topics.Position)
         .registerDisconnectedHandler(clearPosition)
         .registerSubscriber(updatePosition, us => us.forEach(updatePosition));
 

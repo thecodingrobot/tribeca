@@ -20,11 +20,6 @@
     "compression": "1.7.1",
     "connect": "3.6.5",
     "express": "4.16.2",
-    "grunt": "1.0.1",
-    "grunt-browserify": "5.2.0",
-    "grunt-contrib-copy": "1.0.0",
-    "grunt-contrib-watch": "1.0.0",
-    "grunt-ts": "6.0.0-beta.17",
     "jquery": "3.2.1",
     "lodash": "4.17.4",
     "moment": "2.20.1",
@@ -36,12 +31,16 @@
     "shortid": "2.2.8",
     "socket.io": "^2.0.4",
     "socket.io-client": "2.0.4",
-    "typescript": "^2.6.2",
-    "typings": "2.1.1",
+
     "utf-8-validate": "^4.0.0",
     "ws": "^3.3.3"
   },
   "devDependencies": {
+    "grunt": "1.0.1",
+    "grunt-browserify": "5.2.0",
+    "grunt-contrib-copy": "1.0.0",
+    "grunt-contrib-watch": "1.0.0",
+    "grunt-ts": "6.0.0-beta.17",
     "@types/angular": "^1.6.40",
     "@types/angular-ui-bootstrap": "^0.13.46",
     "@types/basic-auth": "1.1.2",
@@ -66,7 +65,9 @@
     "@types/socket.io-client": "^1.4.32",
     "@types/ws": "3.2.1",
     "mocha": "^4.1.0",
-    "ts-node": "^4.1.0"
+    "ts-node": "^4.1.0",
+    "typescript": "^2.6.2",
+    "typings": "2.1.1"
   },
   "scripts": {
     "test": "mocha"

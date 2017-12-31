@@ -131,7 +131,7 @@ export class DisplayPair {
             setStatus();
         };
 
-        const connectivitySubscriber = subscriberFactory.getSubscriber(scope, Messaging.Topics.ExchangeConnectivity)
+        const connectivitySubscriber = subscriberFactory.getSubscriber<Models.ConnectivityStatus>(scope, Messaging.Topics.ExchangeConnectivity)
             .registerSubscriber(setExchangeStatus, cs => cs.forEach(setExchangeStatus))
             .registerDisconnectedHandler(() => setServerStatus(false))
             .registerConnectHandler(() => setServerStatus(true));

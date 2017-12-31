@@ -118,7 +118,7 @@ var uiCtrl = ($scope : MainWindowScope,
     };
     reset("startup", false);
 
-    var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.ProductAdvertisement)
+    var sub = subscriberFactory.getSubscriber<Models.ProductAdvertisement>($scope, Messaging.Topics.ProductAdvertisement)
         .registerSubscriber(onAdvert, a => a.forEach(onAdvert))
         .registerConnectHandler(() => reset("connect", true))
         .registerDisconnectedHandler(() => reset("disconnect", false));

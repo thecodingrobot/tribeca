@@ -57,8 +57,8 @@ export class CombinedGateway {
 }
 
 export interface IMarketTradeBroker {
-    MarketTrade: Utils.Evt<Models.MarketSide>;
-    marketTrades: Models.MarketSide[];
+    MarketTrade: Utils.Evt<Models.MarketTrade>;
+    marketTrades: Models.MarketTrade[];
 }
 
 export interface IMarketDataBroker {

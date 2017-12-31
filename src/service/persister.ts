@@ -13,6 +13,7 @@ import moment = require('moment');
 import Interfaces = require("./interfaces");
 import Config = require("./config");
 import log from "./logging";
+import {Cursor} from "mongodb";
 
 export function loadDb(config: Config.IConfigProvider) {
     return mongodb.MongoClient.connect(config.GetString("MongoDbUrl"));
@@ -90,7 +91,7 @@ export class Persister<T extends Persistable> implements ILoadAll<T> {
     };
 
     private loadInternal = async (selector: Object, limit?: number) : Promise<T[]> => {
-        let query = this.collection.find(selector, {_id: 0});
+        let query: Cursor<T> = this.collection.find(selector).project({_id: 0});
 
         if (limit !== null) {
             const count = await this.collection.count(selector);
@@ -99,7 +100,7 @@ export class Persister<T extends Persistable> implements ILoadAll<T> {
                 query = query.skip(Math.max(count - limit, 0));
         }
 
-        const loaded = _.map(await query.toArray(), this.converter);
+        const loaded: T[] = _.map(await query.toArray(), this.converter);
 
         this._log.info({
             selector: selector,

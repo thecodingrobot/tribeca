@@ -139,7 +139,7 @@ var OrderListController = ($scope: OrderListScope,
         idsToIndex = {};
     };
 
-    var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.OrderStatusReports)
+    var sub = subscriberFactory.getSubscriber<Models.OrderStatusReport>($scope, Messaging.Topics.OrderStatusReports)
         .registerConnectHandler(clear)
         .registerSubscriber(addOrderRpt, os => os.forEach(addOrderRpt));
 

@@ -45,7 +45,7 @@ var MessagesController = ($scope: MessageLoggerScope, $log: ng.ILogService, subs
         $scope.messages.push(new MessageViewModel(u));
     };
 
-    var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.Message)
+    var sub = subscriberFactory.getSubscriber<Models.Message>($scope, Messaging.Topics.Message)
         .registerSubscriber(addNewMessage, x => x.forEach(addNewMessage))
         .registerConnectHandler(() => $scope.messages.length = 0);
 

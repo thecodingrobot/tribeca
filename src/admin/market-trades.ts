@@ -98,7 +98,7 @@ var MarketTradeGrid = ($scope: MarketTradeScope,
             $scope.marketTrades.push(new MarketTradeViewModel(u));
     };
 
-    var sub = subscriberFactory.getSubscriber($scope, Messaging.Topics.MarketTrade)
+    var sub = subscriberFactory.getSubscriber<Models.MarketTrade>($scope, Messaging.Topics.MarketTrade)
         .registerSubscriber(addNewMarketTrade, x => x.forEach(addNewMarketTrade))
         .registerConnectHandler(() => $scope.marketTrades.length = 0);
 

@@ -22,7 +22,7 @@ var TargetBasePositionController = ($scope : TargetBasePositionScope, $log : ng.
         $scope.targetBasePosition = value.data;
     };
 
-    var subscriber = subscriberFactory.getSubscriber($scope, Messaging.Topics.TargetBasePosition)
+    var subscriber = subscriberFactory.getSubscriber<Models.TargetBasePositionValue>($scope, Messaging.Topics.TargetBasePosition)
         .registerConnectHandler(() => $scope.targetBasePosition = null)
         .registerSubscriber(update, us => us.forEach(update));
 
