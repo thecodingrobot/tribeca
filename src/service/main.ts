@@ -263,7 +263,7 @@ const runTradingSystem = async (classes: SimulationClasses) : Promise<void> => {
     const shouldPublishAllOrders = !config.Has("ShowAllOrders") || config.GetBoolean("ShowAllOrders");
     const ordersFilter = shouldPublishAllOrders ? {} : {source: {$gte: Models.OrderSource.OrderTicket}};
 
-    const [
+    let [
         initOrders, initTrades, initMktTrades, initMsgs, initParams, initActive, initRfv] = await Promise.all([
         orderPersister.loadAll(10000, ordersFilter),
         tradesPersister.loadAll(10000),
@@ -272,10 +272,10 @@ const runTradingSystem = async (classes: SimulationClasses) : Promise<void> => {
         paramsPersister.loadLatest(),
         activePersister.loadLatest(),
         rfvPersister.loadAll(50)
-    ])
-            
-    _.defaults(initParams, defaultQuotingParameters);
-    _.defaults(initActive, defaultActive);
+    ]);
+
+    initParams = _.defaults(initParams, defaultQuotingParameters);
+    initActive = _.defaults(initActive, defaultActive);
 
     const orderCache = new Broker.OrderStateCache();
     const timeProvider = classes.timeProvider;

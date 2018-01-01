@@ -283,16 +283,16 @@ export class BacktestPersister<T> implements Persister.ILoadAll<T>, Persister.IL
     };
     
     public loadAll = (limit?: number): Promise<T[]> => { 
-        return new Promise<T[]>(() => {
+        return new Promise<T[]>((resolve, reject) => {
             if (this.initialData) {
                 if (limit) {
-                    return _.takeRight(this.initialData, limit);
+                    resolve(_.takeRight(this.initialData, limit));
                 }
                 else {
-                    return this.initialData;
+                    resolve(this.initialData);
                 }
             }
-            return [];
+            resolve([]);
         });
     };
     
@@ -325,7 +325,7 @@ var backtestServer = () => {
     var mdFile = process.env['MD_FILE'];
     var paramFile = process.env['PARAM_FILE'];
     var savedProgressFile = process.env["PROGRESS_FILE"] || "nextParameters_saved.txt";
-    var backtestResultFile = process.env["RESULT_FILE"] || 'backtestResults.txt';
+    var backtestResultFile = process.env["RESULT_FILE"] || 'backtestResults.json';
     
     var rawParams = fs.readFileSync(paramFile, 'utf8');
     var parameters : BacktestParameters[] = JSON.parse(rawParams);
@@ -388,6 +388,6 @@ var backtestServer = () => {
     });
 }
 
-if (process.argv[1].indexOf("backtest.js") > 1) {
+if (process.argv[1].indexOf("backtest.ts") > 1) {
     backtestServer();
 }
