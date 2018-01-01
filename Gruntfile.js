@@ -1,9 +1,7 @@
 module.exports = function (grunt) {
     "use strict";
 
-    var commonFiles = "src/common/*.ts";
-    var serviceFiles = ["src/service/**/*.ts", commonFiles];
-    var adminFiles = ["src/admin/**/*.ts", commonFiles];
+    var tsFiles = ["src/**/*.ts", "!test/**"];
     var html = "src/static/**";
 
     grunt.initConfig({
@@ -11,13 +9,8 @@ module.exports = function (grunt) {
 
         watch: {
             service: {
-                files: serviceFiles,
-                tasks: ['ts:service']
-            },
-
-            client: {
-                files: adminFiles,
-                tasks: ['ts:admin', "copy", "browserify"]
+                files: tsFiles,
+                tasks: ['ts']
             },
 
             static: {
@@ -27,15 +20,9 @@ module.exports = function (grunt) {
         },
 
         ts: {
-            service: {
-                src: serviceFiles,
+            default: {
+                src: tsFiles,
                 outDir: 'tribeca',
-                tsconfig: true
-            },
-
-            admin: {
-                src: adminFiles,
-                outDir: 'tribeca/service/admin/js',
                 tsconfig: true
             }
         },
@@ -52,7 +39,7 @@ module.exports = function (grunt) {
         browserify: {
             dist: {
                 files: {
-                    "tribeca/service/admin/js/admin/bundle.min.js": ["tribeca/service/admin/js/admin/client.js"]
+                    "tribeca/service/admin/js/admin/bundle.min.js": ["tribeca/admin/client.js", "tribeca/service/admin/js/bootstrap.min.js"]
                 }
             }
         }

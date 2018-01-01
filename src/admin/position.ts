@@ -1,6 +1,5 @@
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
-/// <amd-dependency path="ui.bootstrap"/>
 /// <reference path="shared_directives.ts"/>
 ///<reference path="pair.ts"/>
 

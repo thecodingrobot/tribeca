@@ -12,6 +12,8 @@
 
 (<any>global).jQuery = require("jquery");
 import angular = require("angular");
+require("angular-ui-bootstrap");
+require("angular-ui-grid");
 
 import Models = require("../common/models");
 import OrderList = require("./orderlist");

@@ -2,8 +2,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "es2016",
-    "rootDir": ".",
-    "outDir": "tribeca",
+    "rootDir": "src",
     "sourceMap": false,
     "alwaysStrict": true,
     "strictFunctionTypes": true,
