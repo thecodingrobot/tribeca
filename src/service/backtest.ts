@@ -88,7 +88,7 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
     
     generateClientOrderId = () => {
         return "BACKTEST-" + shortId.generate();
-    }
+    };
 
     public cancelsByClientOrderId = true;
     
@@ -108,7 +108,7 @@ export class BacktestGateway implements Interfaces.IPositionGateway, Interfaces.
                 this._baseAmount -= order.quantity;
             }
             
-            this.OrderUpdate.trigger({ orderId: order.orderId, orderStatus: Models.OrderStatus.Working });
+            this.OrderUpdate.trigger({ orderId: order.orderId, orderStatus: Models.OrderStatus.Working, liquidity: Models.Liquidity.Make });
         }, moment.duration(3));
     };
 
@@ -258,11 +258,11 @@ class BacktestGatewayDetails implements Interfaces.IExchangeDetailsGateway {
     }
 
     makeFee(): number {
-        return 0;
+        return 0.024;
     }
 
     takeFee(): number {
-        return 0;
+        return 0.024;
     }
 
     exchange(): Models.Exchange {

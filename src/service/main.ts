@@ -259,6 +259,7 @@ const runTradingSystem = async (classes: SimulationClasses) : Promise<void> => {
     const paramsPersister = await classes.getRepository<Models.QuotingParameters>(classes.startingParameters, Messaging.Topics.QuotingParametersChange);
     
     const exchange = classes.exchange;
+    console.log("Exchange", exchange);
 
     const shouldPublishAllOrders = !config.Has("ShowAllOrders") || config.GetBoolean("ShowAllOrders");
     const ordersFilter = shouldPublishAllOrders ? {} : {source: {$gte: Models.OrderSource.OrderTicket}};

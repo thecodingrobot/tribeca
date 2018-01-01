@@ -21,7 +21,7 @@ export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
 
     generateClientOrderId = (): string => {
         return uuid.v1();
-    }
+    };
 
     private raiseTimeEvent = (o: Models.OrderStatusReport) => {
         this.OrderUpdate.trigger({
@@ -124,11 +124,11 @@ class NullGatewayDetails implements Interfaces.IExchangeDetailsGateway {
     }
 
     makeFee(): number {
-        return 0;
+        return 0.024;
     }
 
     takeFee(): number {
-        return 0;
+        return 0.024;
     }
 
     exchange(): Models.Exchange {

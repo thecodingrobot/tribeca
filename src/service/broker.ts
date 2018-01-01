@@ -16,6 +16,7 @@ import Persister = require("./persister");
 import Messages = require("./messages");
 import * as moment from "moment";
 import log from "./logging";
+import {OrderStatusReport} from "../common/models";
 
 export class MarketDataBroker implements Interfaces.IMarketDataBroker {
     MarketData = new Utils.Evt<Models.Market>();
@@ -99,7 +100,7 @@ export class OrderBroker implements Interfaces.IOrderBroker {
 
     private roundPrice = (price: number, side: Models.Side) : number => {
         return Utils.roundSide(price, this._baseBroker.minTickIncrement, side);
-    }
+    };
 
     sendOrder = (order : Models.SubmitNewOrder) : Models.SentOrder => {
         const orderId = this._oeGateway.generateClientOrderId();
@@ -283,7 +284,7 @@ export class OrderBroker implements Interfaces.IOrderBroker {
         return o;
     };
 
-    private _pendingRemovals = new Array<Models.OrderStatusReport>();
+    private _pendingRemovals: OrderStatusReport[] = [];
     private updateOrderStatusInMemory = (osr : Models.OrderStatusReport) : boolean => {
         if (this.shouldPublish(osr) || !Models.orderIsDone(osr.orderStatus)) {
             this.addOrderStatusInMemory(osr);
@@ -302,7 +303,7 @@ export class OrderBroker implements Interfaces.IOrderBroker {
 
     private clearPendingRemovals = () => {
         const now = new Date().getTime();
-        const kept = new Array<Models.OrderStatusReport>();
+        const kept: OrderStatusReport[] = [];
         for (let osr of this._pendingRemovals) {
             if (now - osr.time.getTime() > 5000) {
                 this._orderCache.exchIdsToClientIds.delete(osr.exchangeId);
@@ -330,7 +331,7 @@ export class OrderBroker implements Interfaces.IOrderBroker {
 
     private orderStatusSnapshot = () : Models.OrderStatusReport[] => {
         return Array.from(this._orderCache.allOrders.values()).filter(this.shouldPublish);
-    }
+    };
 
     constructor(private _timeProvider: Utils.ITimeProvider,
                 private _baseBroker : Interfaces.IBroker,
